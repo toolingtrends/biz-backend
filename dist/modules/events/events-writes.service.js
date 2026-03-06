@@ -1,0 +1,450 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createEventAdmin = createEventAdmin;
+/**
+ * Admin event create and helpers.
+ * Mirrors app/api/admin/events/route.ts POST logic.
+ */
+const mongodb_1 = require("mongodb");
+const prisma_1 = __importDefault(require("../../config/prisma"));
+function parseCategory(category) {
+    if (Array.isArray(category)) {
+        return category.filter(Boolean);
+    }
+    if (typeof category === "string") {
+        return category.split(",").map((c) => c.trim()).filter(Boolean);
+    }
+    return [];
+}
+const SPACE_TYPE_MAP = {
+    standard: "SHELL_SPACE",
+    shell: "SHELL_SPACE",
+    shell_scheme: "SHELL_SPACE",
+    shell_space: "SHELL_SPACE",
+    raw: "RAW_SPACE",
+    raw_space: "RAW_SPACE",
+    open: "TWO_SIDE_OPEN",
+    two_side_open: "TWO_SIDE_OPEN",
+    premium: "THREE_SIDE_OPEN",
+    three_side_open: "THREE_SIDE_OPEN",
+    vip: "FOUR_SIDE_OPEN",
+    four_side_open: "FOUR_SIDE_OPEN",
+    mezzanine: "MEZZANINE",
+    power: "ADDITIONAL_POWER",
+    additional_power: "ADDITIONAL_POWER",
+    air: "COMPRESSED_AIR",
+    compressed_air: "COMPRESSED_AIR",
+    custom: "CUSTOM",
+};
+const VALID_SPACE_TYPES = [
+    "SHELL_SPACE", "RAW_SPACE", "TWO_SIDE_OPEN", "THREE_SIDE_OPEN",
+    "FOUR_SIDE_OPEN", "MEZZANINE", "ADDITIONAL_POWER", "COMPRESSED_AIR", "CUSTOM",
+];
+function parseSpaceCosts(spaceCosts, currency = "USD") {
+    return spaceCosts.map((space, index) => {
+        const raw = (space.spaceType || space.type || "CUSTOM").toString().toLowerCase();
+        let spaceType = SPACE_TYPE_MAP[raw] || "CUSTOM";
+        if (!VALID_SPACE_TYPES.includes(spaceType))
+            spaceType = "CUSTOM";
+        return {
+            id: space.id || new mongodb_1.ObjectId().toHexString(),
+            spaceType,
+            name: space.name || space.type || `Space ${index + 1}`,
+            description: space.description ?? "",
+            basePrice: space.basePrice ?? space.pricePerSqm ?? space.pricePerUnit ?? 0,
+            pricePerSqm: space.pricePerSqm ?? 0,
+            minArea: space.minArea ?? space.area ?? 0,
+            isFixed: space.isFixed ?? false,
+            additionalPowerRate: space.additionalPowerRate ?? 0,
+            compressedAirRate: space.compressedAirRate ?? 0,
+            unit: space.unit ?? null,
+            area: space.area ?? space.minArea ?? 0,
+            dimensions: space.dimensions ?? (space.area ? `${space.area} sq.m` : "3x3"),
+            location: space.location ?? null,
+            isAvailable: true,
+            maxBooths: space.maxBooths ?? null,
+            bookedBooths: 0,
+            setupRequirements: space.setupRequirements ?? null,
+            currency,
+            powerIncluded: space.powerIncluded ?? false,
+        };
+    });
+}
+async function findOrCreateUser(userData) {
+    const { email, role, ...data } = userData;
+    const normalizedEmail = email.toLowerCase();
+    let user = await prisma_1.default.user.findFirst({
+        where: { email: normalizedEmail, role },
+    });
+    if (user) {
+        const updateData = {};
+        if (data.firstName && data.firstName !== user.firstName)
+            updateData.firstName = data.firstName;
+        if (data.lastName && data.lastName !== user.lastName)
+            updateData.lastName = data.lastName;
+        if (data.company !== undefined && data.company !== user.company)
+            updateData.company = data.company;
+        if (data.phone !== undefined && data.phone !== user.phone)
+            updateData.phone = data.phone;
+        if (data.avatar !== undefined && data.avatar !== user.avatar)
+            updateData.avatar = data.avatar;
+        if (data.venueName !== undefined)
+            updateData.venueName = data.venueName;
+        if (data.venueCity !== undefined)
+            updateData.venueCity = data.venueCity;
+        if (data.venueAddress !== undefined)
+            updateData.venueAddress = data.venueAddress;
+        if (data.jobTitle !== undefined)
+            updateData.jobTitle = data.jobTitle;
+        if (data.bio !== undefined)
+            updateData.bio = data.bio;
+        if (Object.keys(updateData).length > 0) {
+            user = await prisma_1.default.user.update({
+                where: { id: user.id },
+                data: updateData,
+            });
+        }
+        return user;
+    }
+    user = await prisma_1.default.user.create({
+        data: {
+            email: normalizedEmail,
+            firstName: data.firstName ?? (role === "VENUE_MANAGER" ? "Venue" : "User"),
+            lastName: data.lastName ?? (role === "VENUE_MANAGER" ? "Manager" : "Name"),
+            company: data.company ?? "",
+            phone: data.phone ?? "",
+            avatar: data.avatar ?? `/placeholder.svg?height=100&width=100&text=${role.charAt(0)}`,
+            venueName: data.venueName ?? undefined,
+            venueCity: data.venueCity ?? undefined,
+            venueAddress: data.venueAddress ?? undefined,
+            jobTitle: data.jobTitle ?? undefined,
+            bio: data.bio ?? undefined,
+            role,
+            password: "TEMP_PASSWORD_123!",
+            isActive: true,
+        },
+    });
+    return user;
+}
+async function createEventAdmin(params) {
+    const { body, adminId, adminType, ipAddress, userAgent } = params;
+    const required = ["title", "description", "startDate", "endDate"];
+    const missing = required.filter((f) => !body[f]);
+    if (missing.length > 0) {
+        return { error: "MISSING_FIELDS", missing };
+    }
+    const images = Array.isArray(body.images) ? body.images : [];
+    const videos = Array.isArray(body.videos) ? body.videos : [];
+    const documents = Array.isArray(body.documents)
+        ? body.documents.filter(Boolean)
+        : [body.brochure, body.layoutPlan].filter(Boolean);
+    let organizerId;
+    if (body.organizerId) {
+        organizerId = body.organizerId;
+    }
+    else if (body.organizerEmail || body.organizerName) {
+        const organizer = await findOrCreateUser({
+            email: body.organizerEmail || `organizer-${Date.now()}@eventify.com`,
+            firstName: (body.organizerName || "Event Organizer").split(" ")[0],
+            lastName: (body.organizerName || "Event Organizer").split(" ").slice(1).join(" "),
+            company: body.organizationName || body.organizer?.company,
+            role: "ORGANIZER",
+        });
+        organizerId = organizer.id;
+    }
+    else {
+        return { error: "ORGANIZER_REQUIRED" };
+    }
+    let venueId = null;
+    if (body.venueId) {
+        venueId = body.venueId;
+    }
+    else if (body.venueName || body.city || body.address) {
+        const venue = await findOrCreateUser({
+            email: body.venueEmail || `venue-${Date.now()}@eventify.com`,
+            firstName: "Venue",
+            lastName: "Manager",
+            role: "VENUE_MANAGER",
+            venueName: body.venueName || body.venue,
+            venueCity: body.city,
+            venueAddress: body.address,
+            phone: body.venuePhone,
+        });
+        venueId = venue.id;
+    }
+    const speakerSessionsData = Array.isArray(body.speakerSessions) ? body.speakerSessions : [];
+    const processedSessions = [];
+    for (const s of speakerSessionsData) {
+        let speakerId = s.speakerId;
+        if (!speakerId && (s.speakerEmail || s.speakerName)) {
+            const sp = await findOrCreateUser({
+                email: s.speakerEmail || `speaker-${Date.now()}@eventify.com`,
+                firstName: (s.speakerName || "Speaker").split(" ")[0],
+                lastName: (s.speakerName || "Speaker").split(" ").slice(1).join(" "),
+                role: "SPEAKER",
+                jobTitle: s.speakerTitle,
+                bio: s.speakerBio,
+                avatar: s.speakerImage,
+            });
+            speakerId = sp.id;
+        }
+        if (speakerId) {
+            processedSessions.push({ ...s, speakerId });
+        }
+    }
+    const exhibitorBoothsData = Array.isArray(body.exhibitorBooths) ? body.exhibitorBooths : [];
+    const processedExhibitors = [];
+    for (const ex of exhibitorBoothsData) {
+        let exhibitorId = ex.exhibitorId;
+        if (!exhibitorId && (ex.exhibitorEmail || ex.exhibitorName)) {
+            const newEx = await findOrCreateUser({
+                email: ex.exhibitorEmail || `exhibitor-${Date.now()}@eventify.com`,
+                firstName: (ex.exhibitorName || ex.company || "Exhibitor").split(" ")[0],
+                lastName: (ex.exhibitorName || ex.company || "Exhibitor").split(" ").slice(1).join(" "),
+                role: "EXHIBITOR",
+                company: ex.company,
+                phone: ex.phone,
+                bio: ex.description,
+                jobTitle: ex.jobTitle,
+            });
+            exhibitorId = newEx.id;
+        }
+        if (exhibitorId) {
+            processedExhibitors.push({
+                ...ex,
+                exhibitorId,
+                companyName: ex.company || ex.companyName || "Unknown Company",
+                totalCost: ex.totalCost ?? 0,
+            });
+        }
+    }
+    const eventId = new mongodb_1.ObjectId().toHexString();
+    const slug = body.slug ||
+        (body.title || "")
+            .toString()
+            .toLowerCase()
+            .replace(/\s+/g, "-")
+            .replace(/[^a-z0-9-]/g, "");
+    const eventData = {
+        id: eventId,
+        title: body.title,
+        description: body.description,
+        shortDescription: body.shortDescription || (body.description ? String(body.description).substring(0, 200) : null),
+        slug,
+        status: body.status?.toUpperCase() || "DRAFT",
+        category: parseCategory(body.categories || body.category || body.eventCategories),
+        tags: Array.isArray(body.tags) ? body.tags : [],
+        eventType: body.eventType ? [body.eventType].flat() : [],
+        startDate: new Date(body.startDate),
+        endDate: new Date(body.endDate),
+        registrationStart: new Date(body.registrationStart || body.startDate),
+        registrationEnd: new Date(body.registrationEnd || body.endDate),
+        timezone: body.timezone || "UTC",
+        isVirtual: !!body.isVirtual,
+        virtualLink: body.virtualLink || null,
+        venueId,
+        maxAttendees: body.maxAttendees ?? body.maxCapacity ?? null,
+        currentAttendees: 0,
+        currency: body.currency || "USD",
+        images,
+        videos,
+        documents,
+        brochure: body.brochure || null,
+        layoutPlan: body.layoutPlan || null,
+        bannerImage: body.bannerImage || images[0] || null,
+        thumbnailImage: body.thumbnailImage || images[0] || null,
+        isPublic: body.isPublic !== false,
+        requiresApproval: !!body.requiresApproval,
+        allowWaitlist: !!body.allowWaitlist,
+        refundPolicy: body.refundPolicy || null,
+        metaTitle: body.metaTitle || null,
+        metaDescription: body.metaDescription || null,
+        isFeatured: !!(body.featured || body.isFeatured),
+        isVIP: !!(body.vip || body.isVIP),
+        organizerId,
+    };
+    const ticketTypesData = [
+        {
+            name: "General Admission",
+            description: "General admission ticket",
+            price: body.generalPrice ?? body.ticketPrice ?? 0,
+            quantity: body.maxAttendees ?? body.maxCapacity ?? 100,
+            isActive: true,
+        },
+    ];
+    if (Number(body.studentPrice) > 0) {
+        ticketTypesData.push({
+            name: "Student",
+            description: "Student ticket",
+            price: body.studentPrice,
+            quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.2),
+            isActive: true,
+        });
+    }
+    if (Number(body.vipPrice) > 0) {
+        ticketTypesData.push({
+            name: "VIP",
+            description: "VIP ticket",
+            price: body.vipPrice,
+            quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.1),
+            isActive: true,
+        });
+    }
+    if (Number(body.groupPrice) > 0) {
+        ticketTypesData.push({
+            name: "Group",
+            description: "Group ticket",
+            price: body.groupPrice,
+            quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.15),
+            isActive: true,
+        });
+    }
+    const hasProvidedSpaces = Array.isArray(body.spaceCosts) && body.spaceCosts.length > 0;
+    let spacesToCreate = [];
+    if (hasProvidedSpaces) {
+        spacesToCreate = parseSpaceCosts(body.spaceCosts, eventData.currency);
+    }
+    else if (processedExhibitors.length > 0) {
+        spacesToCreate = [
+            {
+                id: new mongodb_1.ObjectId().toHexString(),
+                spaceType: "SHELL_SPACE",
+                name: "Default Exhibition Space",
+                description: "Automatically created exhibition space for exhibitors",
+                dimensions: "3x3",
+                area: 9,
+                basePrice: 0,
+                currency: eventData.currency,
+                isAvailable: true,
+                powerIncluded: false,
+            },
+        ];
+    }
+    const speakerCreatePayload = processedSessions.map((s) => ({
+        title: s.title || "Presentation",
+        description: s.description || "",
+        sessionType: s.sessionType?.toUpperCase() || "PRESENTATION",
+        duration: s.duration ?? 60,
+        startTime: s.startTime ? new Date(s.startTime) : new Date(),
+        endTime: s.endTime ? new Date(s.endTime) : new Date(Date.now() + 60 * 60 * 1000),
+        room: s.room ?? null,
+        abstract: s.abstract ?? null,
+        learningObjectives: s.learningObjectives ?? [],
+        targetAudience: s.targetAudience ?? null,
+        status: "SCHEDULED",
+        speakerId: s.speakerId,
+    }));
+    const defaultSpaceId = spacesToCreate.length > 0 ? spacesToCreate[0].id : null;
+    const exhibitorCreatePayload = processedExhibitors.map((b, idx) => {
+        const resolvedSpaceId = b.spaceId || b.space?.id || defaultSpaceId;
+        if (!resolvedSpaceId) {
+            throw new Error(`spaceId is required for exhibitor booth index ${idx}`);
+        }
+        return {
+            boothNumber: b.boothNumber || `B-${100 + idx}`,
+            status: b.status || "BOOKED",
+            companyName: b.companyName,
+            description: b.description ?? null,
+            additionalPower: b.additionalPower ?? 0,
+            compressedAir: b.compressedAir ?? 0,
+            setupRequirements: b.setupRequirements ?? null,
+            totalCost: b.totalCost ?? 0,
+            currency: b.currency || eventData.currency,
+            exhibitor: { connect: { id: b.exhibitorId } },
+            space: { connect: { id: resolvedSpaceId } },
+            spaceReference: b.spaceReference ?? null,
+        };
+    });
+    const createdEvent = await prisma_1.default.event.create({
+        data: {
+            ...eventData,
+            ticketTypes: ticketTypesData.length > 0 ? { create: ticketTypesData } : undefined,
+            exhibitionSpaces: spacesToCreate.length > 0 ? { create: spacesToCreate } : undefined,
+            speakerSessions: speakerCreatePayload.length > 0 ? { create: speakerCreatePayload } : undefined,
+            exhibitorBooths: exhibitorCreatePayload.length > 0 ? { create: exhibitorCreatePayload } : undefined,
+        },
+        include: {
+            organizer: {
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    organizationName: true,
+                    company: true,
+                    phone: true,
+                },
+            },
+            venue: {
+                select: {
+                    id: true,
+                    venueName: true,
+                    venueCity: true,
+                    venueAddress: true,
+                    venueState: true,
+                    venueCountry: true,
+                },
+            },
+            exhibitionSpaces: true,
+            ticketTypes: true,
+            speakerSessions: {
+                include: {
+                    speaker: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            company: true,
+                            jobTitle: true,
+                            avatar: true,
+                        },
+                    },
+                },
+            },
+            exhibitorBooths: {
+                include: {
+                    exhibitor: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true,
+                            company: true,
+                            phone: true,
+                        },
+                    },
+                    space: true,
+                },
+            },
+        },
+    });
+    await prisma_1.default.adminLog.create({
+        data: {
+            adminId,
+            adminType,
+            action: "EVENT_CREATED",
+            resource: "EVENT",
+            resourceId: createdEvent.id,
+            details: {
+                title: createdEvent.title,
+                organizerId: createdEvent.organizerId,
+                venueId: createdEvent.venueId,
+                speakerCount: createdEvent.speakerSessions?.length ?? 0,
+                exhibitorCount: createdEvent.exhibitorBooths?.length ?? 0,
+                spaceCount: createdEvent.exhibitionSpaces?.length ?? 0,
+                status: createdEvent.status,
+            },
+            ipAddress: ipAddress ?? undefined,
+            userAgent: userAgent ?? undefined,
+        },
+    });
+    return {
+        success: true,
+        message: "Event created successfully with nested entities",
+        event: createdEvent,
+    };
+}
