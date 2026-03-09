@@ -673,6 +673,63 @@ export async function listEventLeads(eventId: string) {
   return leads;
 }
 
+// Create or reuse an event lead (user interest in event)
+export async function createEventLead(args: {
+  eventId: string;
+  userId: string;
+  type: string;
+}) {
+  const { eventId, userId, type } = args;
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true },
+  });
+  if (!event) {
+    return { error: "EVENT_NOT_FOUND" as const };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!user) {
+    return { error: "USER_NOT_FOUND" as const };
+  }
+
+  const existing = await prisma.eventLead.findFirst({
+    where: {
+      eventId,
+      userId,
+      type,
+    },
+  });
+
+  if (existing) {
+    return {
+      success: true as const,
+      alreadyExists: true as const,
+      lead: existing,
+      message: "Interest already recorded",
+    };
+  }
+
+  const lead = await prisma.eventLead.create({
+    data: {
+      eventId,
+      userId,
+      type,
+      status: "NEW",
+    },
+  });
+
+  return {
+    success: true as const,
+    lead,
+    message: "Interest recorded successfully",
+  };
+}
+
 export async function listEventExhibitors(eventId: string) {
   const booths = await prisma.exhibitorBooth.findMany({
     where: { eventId },
@@ -725,6 +782,50 @@ export async function listEventSpeakers(eventId: string) {
       },
     },
     orderBy: { startTime: "asc" as const },
+  });
+
+  return sessions;
+}
+
+// Speaker sessions listing used by /api/events/speakers
+export async function listSpeakerSessions(params: {
+  eventId?: string | null;
+  speakerId?: string | null;
+}) {
+  const where: any = {};
+
+  if (params.eventId) {
+    where.eventId = params.eventId;
+  }
+
+  if (params.speakerId) {
+    where.speakerId = params.speakerId;
+  }
+
+  const sessions = await prisma.speakerSession.findMany({
+    where,
+    include: {
+      event: {
+        select: {
+          id: true,
+          title: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+      speaker: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          company: true,
+          jobTitle: true,
+        },
+      },
+    },
+    orderBy: { startTime: "asc" },
   });
 
   return sessions;

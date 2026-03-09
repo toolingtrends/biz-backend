@@ -15,6 +15,8 @@ import {
   listOrganizerMessages,
   createOrganizerMessage,
   deleteOrganizerMessage,
+  updateOrganizerProfile,
+  listOrganizerConnections,
 } from "./organizers.service";
 import { updateEventByOrganizer, deleteEventByOrganizer } from "../events/events.service";
 import { createEventAdmin } from "../events/events-writes.service";
@@ -49,6 +51,33 @@ export async function getOrganizerHandler(req: Request, res: Response) {
   } catch (error: any) {
     // eslint-disable-next-line no-console
     console.error("Error fetching organizer (backend):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function updateOrganizerProfileHandler(req: Request, res: Response) {
+  try {
+    const auth = req.auth;
+    const { id } = req.params;
+
+    if (!id || id === "undefined") {
+      return res.status(400).json({ error: "Invalid organizer ID" });
+    }
+
+    if (!auth || (auth.sub !== id && auth.role !== "ORGANIZER")) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const updated = await updateOrganizerProfile(id, req.body ?? {});
+
+    if (!updated) {
+      return res.status(404).json({ error: "Organizer not found" });
+    }
+
+    return res.json({ organizer: updated });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error updating organizer (backend):", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
@@ -347,6 +376,44 @@ export async function deleteOrganizerMessageHandler(req: Request, res: Response)
     return res.status(500).json({
       success: false,
       error: "Failed to delete message",
+      details: error.message,
+    });
+  }
+}
+
+// ---------- Organizer connections ----------
+
+export async function getOrganizerConnectionsHandler(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const auth = req.auth;
+
+    if (!id || id === "undefined") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid organizer ID",
+      });
+    }
+
+    if (!auth || (auth.sub !== id && auth.role !== "ORGANIZER")) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
+    const connections = await listOrganizerConnections(id);
+
+    return res.json({
+      success: true,
+      connections,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error fetching organizer connections (backend):", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch connections",
       details: error.message,
     });
   }

@@ -477,3 +477,84 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     event: createdEvent,
   };
 }
+
+// Create a single speaker session (used by /api/events/speakers POST)
+export async function createSpeakerSession(body: {
+  eventId: string;
+  speakerId: string;
+  title: string;
+  description?: string;
+  sessionType: string;
+  duration?: number | string;
+  startTime: string;
+  endTime: string;
+  room?: string;
+  abstract?: string;
+  learningObjectives?: string[];
+  targetAudience?: string;
+}) {
+  const {
+    eventId,
+    speakerId,
+    title,
+    description,
+    sessionType,
+    duration,
+    startTime,
+    endTime,
+    room,
+    abstract,
+    learningObjectives,
+    targetAudience,
+  } = body;
+
+  const durationMinutes =
+    typeof duration === "string" ? parseInt(duration, 10) || 0 : duration ?? 0;
+
+  const start = new Date(startTime);
+  const end = new Date(endTime);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Invalid startTime or endTime");
+  }
+
+  const session = await prisma.speakerSession.create({
+    data: {
+      eventId,
+      speakerId,
+      title,
+      description: description ?? "",
+      sessionType: sessionType as any,
+      duration: durationMinutes || 60,
+      startTime: start,
+      endTime: end,
+      room: room ?? null,
+      abstract: abstract ?? null,
+      learningObjectives: Array.isArray(learningObjectives)
+        ? learningObjectives
+        : [],
+      targetAudience: targetAudience ?? null,
+    },
+    include: {
+      event: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      speaker: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          company: true,
+          jobTitle: true,
+        },
+      },
+    },
+  });
+
+  return session;
+}

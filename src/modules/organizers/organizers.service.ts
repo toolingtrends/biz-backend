@@ -210,6 +210,105 @@ export async function getOrganizerById(id: string) {
   return organizerData;
 }
 
+// ---------- Update organizer profile (self-service) ----------
+
+export async function updateOrganizerProfile(
+  organizerId: string,
+  body: Record<string, unknown>,
+) {
+  const existing = await prisma.user.findFirst({
+    where: { id: organizerId, role: "ORGANIZER" },
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const data: Record<string, unknown> = {};
+
+  if (body.company !== undefined || body.organizationName !== undefined) {
+    const organizationName =
+      (body.organizationName as string | undefined) ??
+      (body.company as string | undefined) ??
+      existing.organizationName ??
+      existing.company ??
+      `${existing.firstName} ${existing.lastName}`;
+    data.company = body.company ?? organizationName;
+    data.organizationName = organizationName;
+  }
+
+  if (body.description !== undefined) {
+    data.description = body.description ?? null;
+  }
+
+  if (body.email !== undefined) {
+    data.email = String(body.email ?? "").trim().toLowerCase();
+  }
+
+  if (body.phone !== undefined) {
+    data.phone = body.phone != null ? String(body.phone) : null;
+  }
+
+  if (body.website !== undefined) {
+    data.website = body.website != null ? String(body.website) : null;
+  }
+
+  if (body.headquarters !== undefined) {
+    const hq = body.headquarters != null ? String(body.headquarters) : null;
+    data.headquarters = hq;
+    if (!body.location) {
+      data.location = hq;
+    }
+  }
+
+  if (body.location !== undefined) {
+    data.location = body.location != null ? String(body.location) : null;
+  }
+
+  if (body.founded !== undefined) {
+    data.founded = body.founded != null ? String(body.founded) : null;
+  }
+
+  if (body.teamSize !== undefined) {
+    data.teamSize = body.teamSize != null ? String(body.teamSize) : null;
+  }
+
+  if (body.specialties !== undefined && Array.isArray(body.specialties)) {
+    data.specialties = body.specialties;
+  }
+
+  if (body.achievements !== undefined && Array.isArray(body.achievements)) {
+    data.achievements = body.achievements;
+  }
+
+  if (body.certifications !== undefined && Array.isArray(body.certifications)) {
+    data.certifications = body.certifications;
+  }
+
+  if (body.businessEmail !== undefined) {
+    data.businessEmail = body.businessEmail != null ? String(body.businessEmail) : null;
+  }
+
+  if (body.businessPhone !== undefined) {
+    data.businessPhone = body.businessPhone != null ? String(body.businessPhone) : null;
+  }
+
+  if (body.businessAddress !== undefined) {
+    data.businessAddress = body.businessAddress != null ? String(body.businessAddress) : null;
+  }
+
+  if (body.avatar !== undefined) {
+    data.avatar = body.avatar != null ? String(body.avatar) : null;
+  }
+
+  await prisma.user.update({
+    where: { id: organizerId },
+    data: data as any,
+  });
+
+  return getOrganizerById(organizerId);
+}
+
 // ---------- Organizer analytics ----------
 
 function getColorForCategory(category: string): string {
@@ -413,6 +512,53 @@ export async function getOrganizerAnalytics(id: string) {
   }
 
   return analyticsData;
+}
+
+// ---------- Organizer connections (messaging sidebar) ----------
+
+export async function listOrganizerConnections(organizerId: string) {
+  // For compatibility with the legacy Next.js route, we don't persist
+  // a Connection model yet; we expose a curated list of active users
+  // (excluding the organizer themself) as "connections".
+  const users = await prisma.user.findMany({
+    where: {
+      AND: [
+        { id: { not: organizerId } },
+        { isActive: true },
+      ],
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      avatar: true,
+      role: true,
+      company: true,
+      jobTitle: true,
+      lastLogin: true,
+    },
+    orderBy: [
+      { lastLogin: "desc" },
+      { firstName: "asc" },
+    ],
+    take: 100,
+  });
+
+  const connections = users.map((user) => ({
+    id: user.id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    avatar: user.avatar || "/placeholder.svg?height=40&width=40",
+    role: user.role,
+    company: user.company || "No Company",
+    jobTitle: user.jobTitle || "No Title",
+    lastLogin: user.lastLogin?.toISOString() || new Date().toISOString(),
+    isOnline: false,
+  }));
+
+  return connections;
 }
 
 // ---------- Organizer events list (all statuses) ----------

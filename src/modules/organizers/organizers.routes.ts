@@ -19,6 +19,8 @@ import {
   getOrganizerSubscriptionHandler,
   updateOrganizerSubscriptionHandler,
   getOrganizerReviewsHandler,
+  updateOrganizerProfileHandler,
+  getOrganizerConnectionsHandler,
 } from "./organizers.controller";
 import { requireUser } from "../../middleware/auth.middleware";
 
@@ -29,6 +31,9 @@ router.get("/organizers", getOrganizersHandler);
 
 // Single organizer details
 router.get("/organizers/:id", getOrganizerHandler);
+
+// Organizer updates their own profile
+router.patch("/organizers/:id", requireUser, updateOrganizerProfileHandler);
 
 // Organizer analytics
 router.get("/organizers/:id/analytics", getOrganizerAnalyticsHandler);
@@ -64,6 +69,20 @@ router.get(
   "/organizers/:id/leads/attendees",
   requireUser,
   getOrganizerAttendeeLeadsHandler
+);
+
+// Organizer attendees alias (same as leads/attendees for now)
+router.get(
+  "/organizers/:id/attendees",
+  requireUser,
+  getOrganizerAttendeeLeadsHandler
+);
+
+// Organizer connections (dashboard)
+router.get(
+  "/organizers/:id/connections",
+  requireUser,
+  getOrganizerConnectionsHandler
 );
 
 // Organizer promotions (dashboard, authenticated)

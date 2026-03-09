@@ -19,6 +19,8 @@ import {
   updateEventLayoutHandler,
   deleteEventLayoutHandler,
   getEventSpaceCostsHandler,
+  listSpeakerSessionsHandler,
+  createSpeakerSessionHandler,
 } from "./events.controller";
 import { requireUser } from "../../middleware/auth.middleware";
 
@@ -44,12 +46,17 @@ router.get("/events/:id", getEventByIdHandler);
 
 // Event sub-resources (leads, exhibitors, speakers, brochure, layout, space-costs)
 router.get("/events/:id/leads", getEventLeadsHandler);
+router.post("/events/:id/leads", createEventLeadHandler);
 router.get("/events/:id/exhibitors", getEventExhibitorsHandler);
 router.get("/events/:id/speakers", getEventSpeakersHandler);
 router.get("/events/:id/brochure", getEventBrochureHandler);
 router.put("/events/:id/layout", requireUser, updateEventLayoutHandler);
 router.delete("/events/:id/layout", requireUser, deleteEventLayoutHandler);
 router.get("/events/:id/space-costs", getEventSpaceCostsHandler);
+
+// Global speaker sessions listing / creation
+router.get("/events/speakers", listSpeakerSessionsHandler);
+router.post("/events/speakers", requireUser, createSpeakerSessionHandler);
 
 // Save / unsave event (user only)
 router.post("/events/:id/save", requireUser, saveEventHandler);

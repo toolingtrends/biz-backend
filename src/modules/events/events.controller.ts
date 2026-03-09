@@ -19,8 +19,10 @@ import {
   getEventBrochureAndDocuments,
   updateEventLayoutPlan,
   listEventSpaceCosts,
+  listSpeakerSessions,
+  createEventLead,
 } from "./events.service";
-import { createEventAdmin } from "./events-writes.service";
+import { createEventAdmin, createSpeakerSession } from "./events-writes.service";
 
 export async function getEventsHandler(req: Request, res: Response) {
   try {
@@ -153,6 +155,50 @@ export async function getEventLeadsHandler(req: Request, res: Response) {
   }
 }
 
+export async function createEventLeadHandler(req: Request, res: Response) {
+  try {
+    const { id: eventId } = req.params;
+    const { type, userId } = req.body as { type?: string; userId?: string };
+
+    if (!eventId) {
+      return res.status(400).json({ error: "Event ID is required" });
+    }
+    if (!type || !userId) {
+      return res.status(400).json({ error: "type and userId are required" });
+    }
+
+    const result = await createEventLead({ eventId, userId, type });
+
+    if ("error" in result) {
+      if (result.error === "EVENT_NOT_FOUND") {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      if (result.error === "USER_NOT_FOUND") {
+        return res.status(404).json({ error: "User not found" });
+      }
+      return res.status(400).json({ error: "Bad request" });
+    }
+
+    if (result.alreadyExists) {
+      return res.status(200).json({
+        success: true,
+        message: result.message,
+        lead: result.lead,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: result.message,
+      lead: result.lead,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error creating event lead (backend):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
 export async function getEventExhibitorsHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
@@ -190,6 +236,38 @@ export async function getEventSpeakersHandler(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       error: "Failed to fetch event speakers",
+      details: error.message,
+    });
+  }
+}
+
+// Global speakers/session listing for /api/events/speakers
+export async function listSpeakerSessionsHandler(req: Request, res: Response) {
+  try {
+    const { eventId, speakerId } = req.query;
+
+    if (!eventId && !speakerId) {
+      return res.status(400).json({
+        success: false,
+        error: "eventId or speakerId is required",
+      });
+    }
+
+    const sessions = await listSpeakerSessions({
+      eventId: (eventId as string | undefined) ?? null,
+      speakerId: (speakerId as string | undefined) ?? null,
+    });
+
+    return res.json({
+      success: true,
+      sessions,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error listing speaker sessions (backend):", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to list speaker sessions",
       details: error.message,
     });
   }
@@ -493,6 +571,29 @@ export async function createEventAdminHandler(req: Request, res: Response) {
       success: false,
       error: "Internal server error",
       details: err?.message,
+    });
+  }
+}
+
+export async function createSpeakerSessionHandler(req: Request, res: Response) {
+  try {
+    const auth = req.auth;
+    if (!auth) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const session = await createSpeakerSession(req.body ?? {});
+
+    return res.status(201).json({
+      success: true,
+      session,
+    });
+  } catch (err: any) {
+    // eslint-disable-next-line no-console
+    console.error("Create speaker session error (backend):", err);
+    return res.status(400).json({
+      success: false,
+      error: err?.message || "Failed to create speaker session",
     });
   }
 }
