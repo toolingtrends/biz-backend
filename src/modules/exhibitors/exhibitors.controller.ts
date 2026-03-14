@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import {
   listExhibitors,
   getExhibitorById,
+  updateExhibitorProfile,
   getExhibitorAnalytics,
   getExhibitorEvents,
   createExhibitor,
@@ -63,6 +64,29 @@ export async function getExhibitorHandler(req: Request, res: Response) {
     }
     // eslint-disable-next-line no-console
     console.error("Error fetching exhibitor (backend):", error);
+    return res.status(500).json({ success: false, error: "Internal server error" });
+  }
+}
+
+export async function updateExhibitorHandler(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const updated = await updateExhibitorProfile(id, req.body ?? {});
+
+    if (!updated) {
+      return res.status(404).json({ success: false, error: "Exhibitor not found" });
+    }
+
+    return res.json({ success: true, exhibitor: updated });
+  } catch (error: any) {
+    if (error instanceof Error && error.message.includes("Invalid exhibitor ID")) {
+      return res.status(400).json({ success: false, error: "Invalid exhibitor ID" });
+    }
+    if (error instanceof Error && error.message.includes("Exhibitor not found")) {
+      return res.status(404).json({ success: false, error: "Exhibitor not found" });
+    }
+    // eslint-disable-next-line no-console
+    console.error("Error updating exhibitor (backend):", error);
     return res.status(500).json({ success: false, error: "Internal server error" });
   }
 }

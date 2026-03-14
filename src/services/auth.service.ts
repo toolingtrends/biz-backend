@@ -20,13 +20,18 @@ export interface AuthResult {
 }
 
 function mapUserRoleToAuthRole(role: string | null | undefined): AuthRole {
-  switch (role) {
+  const r = (role || "").toUpperCase();
+  switch (r) {
     case "ORGANIZER":
       return "ORGANIZER";
     case "EXHIBITOR":
       return "EXHIBITOR";
     case "VENUE_MANAGER":
       return "VENUE_MANAGER";
+    case "SPEAKER":
+      return "SPEAKER";
+    case "ATTENDEE":
+      return "ATTENDEE";
     case "SUPER_ADMIN":
       return "SUPER_ADMIN";
     case "SUB_ADMIN":

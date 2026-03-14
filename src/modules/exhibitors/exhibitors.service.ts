@@ -105,6 +105,68 @@ export async function createExhibitor(body: {
   return { exhibitor };
 }
 
+/** Update exhibitor profile (User with role EXHIBITOR). Persists to PostgreSQL. */
+export async function updateExhibitorProfile(
+  id: string,
+  body: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    avatar?: string;
+    bio?: string;
+    website?: string;
+    twitter?: string;
+    jobTitle?: string;
+    company?: string;
+    linkedin?: string;
+    location?: string;
+    businessEmail?: string;
+    businessPhone?: string;
+    businessAddress?: string;
+  }
+) {
+  if (!id || id === "undefined") {
+    throw new Error("Invalid exhibitor ID");
+  }
+
+  const existing = await prisma.user.findFirst({
+    where: { id, role: "EXHIBITOR" },
+    select: { id: true },
+  });
+  if (!existing) {
+    throw new Error("Exhibitor not found");
+  }
+
+  const data: Record<string, unknown> = {};
+  const fn = String(body.firstName ?? "").trim();
+  const ln = String(body.lastName ?? "").trim();
+  if (body.firstName !== undefined && fn) data.firstName = fn;
+  if (body.lastName !== undefined && ln) data.lastName = ln;
+  if (body.phone !== undefined) data.phone = body.phone === "" ? null : (body.phone as string);
+  if (body.avatar !== undefined) data.avatar = body.avatar === "" ? null : (body.avatar as string);
+  if (body.bio !== undefined) data.bio = body.bio === "" ? null : (body.bio as string);
+  if (body.website !== undefined) data.website = body.website === "" ? null : (body.website as string);
+  if (body.twitter !== undefined) data.twitter = body.twitter === "" ? null : (body.twitter as string);
+  if (body.jobTitle !== undefined) data.jobTitle = body.jobTitle === "" ? null : (body.jobTitle as string);
+  if (body.company !== undefined) data.company = body.company === "" ? null : (body.company as string);
+  if (body.linkedin !== undefined) data.linkedin = body.linkedin === "" ? null : (body.linkedin as string);
+  if (body.location !== undefined) data.location = body.location === "" ? null : (body.location as string);
+  if (body.businessEmail !== undefined) data.businessEmail = body.businessEmail === "" ? null : (body.businessEmail as string);
+  if (body.businessPhone !== undefined) data.businessPhone = body.businessPhone === "" ? null : (body.businessPhone as string);
+  if (body.businessAddress !== undefined) data.businessAddress = body.businessAddress === "" ? null : (body.businessAddress as string);
+
+  if (Object.keys(data).length === 0) {
+    return getExhibitorById(id);
+  }
+
+  await prisma.user.update({
+    where: { id },
+    data: data as any,
+  });
+
+  return getExhibitorById(id);
+}
+
 // Single exhibitor (read-only) – shape for public exhibitor page
 export async function getExhibitorById(id: string) {
   if (!id || id === "undefined") {
@@ -126,9 +188,13 @@ export async function getExhibitorById(id: string) {
       role: true,
       bio: true,
       website: true,
+      twitter: true,
+      jobTitle: true,
+      company: true,
+      linkedin: true,
+      location: true,
       isVerified: true,
       createdAt: true,
-      company: true,
       companyIndustry: true,
       description: true,
       organizationName: true,
@@ -140,6 +206,8 @@ export async function getExhibitorById(id: string) {
       businessEmail: true,
       businessPhone: true,
       businessAddress: true,
+      totalEvents: true,
+      activeEvents: true,
     },
   });
 
@@ -156,16 +224,26 @@ export async function getExhibitorById(id: string) {
     avatar: user.avatar ?? undefined,
     bio: user.bio ?? user.description ?? undefined,
     website: user.website ?? undefined,
-    isVerified: user.isVerified,
-    createdAt: user.createdAt.toISOString(),
+    twitter: user.twitter ?? undefined,
+    jobTitle: user.jobTitle ?? undefined,
     companyName: user.company ?? user.organizationName ?? undefined,
     companyLogo: user.avatar ?? undefined,
+    company: user.company ?? user.organizationName ?? undefined,
+    linkedin: user.linkedin ?? undefined,
+    location: user.location ?? undefined,
+    isVerified: user.isVerified,
+    createdAt: user.createdAt.toISOString(),
     industry: user.companyIndustry ?? undefined,
     companySize: user.teamSize ?? undefined,
     foundedYear: user.founded ?? undefined,
     headquarters: user.headquarters ?? undefined,
     specialties: user.specialties ?? undefined,
     certifications: user.certifications ?? undefined,
+    businessEmail: user.businessEmail ?? undefined,
+    businessPhone: user.businessPhone ?? undefined,
+    businessAddress: user.businessAddress ?? undefined,
+    totalEvents: user.totalEvents ?? 0,
+    activeEvents: user.activeEvents ?? 0,
   };
 }
 

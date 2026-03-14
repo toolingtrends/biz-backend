@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   getExhibitorsHandler,
   getExhibitorHandler,
+  updateExhibitorHandler,
   getExhibitorAnalyticsHandler,
   getExhibitorEventsHandler,
   createExhibitorHandler,
@@ -20,8 +21,9 @@ router.get("/exhibitors", getExhibitorsHandler);
 // Create exhibitor (for Add Exhibitor flow)
 router.post("/exhibitors", createExhibitorHandler);
 
-// Single exhibitor
+// Single exhibitor (GET + PUT for profile)
 router.get("/exhibitors/:id", getExhibitorHandler);
+router.put("/exhibitors/:id", updateExhibitorHandler);
 
 // Exhibitor analytics
 router.get("/exhibitors/:id/analytics", getExhibitorAnalyticsHandler);

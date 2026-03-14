@@ -2,6 +2,8 @@ export type AuthRole =
   | "USER"
   | "ORGANIZER"
   | "EXHIBITOR"
+  | "SPEAKER"
+  | "ATTENDEE"
   | "SUPER_ADMIN"
   | "SUB_ADMIN"
   | "VENUE_MANAGER";
