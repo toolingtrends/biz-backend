@@ -14,6 +14,7 @@ import {
   getRecentEventsHandler,
   getVipEventsHandler,
   getEventLeadsHandler,
+  getEventAttendeesHandler,
   createEventLeadHandler,
   getEventExhibitorsHandler,
   getEventSpeakersHandler,
@@ -66,8 +67,9 @@ router.get("/events/:id", getEventByIdHandler);
 // NOTE: Left unauthenticated so organizer dashboard via Next.js can patch without backend JWT.
 router.patch("/events/:id", patchEventByIdHandler);
 
-// Event sub-resources (leads, exhibitors, speakers, brochure, layout, space-costs)
+// Event sub-resources (leads, attendees, exhibitors, speakers, brochure, layout, space-costs)
 router.get("/events/:id/leads", getEventLeadsHandler);
+router.get("/events/:id/attendees", getEventAttendeesHandler);
 router.post("/events/:id/leads", requireUser, createEventLeadHandler);
 router.get("/events/:id/exhibitors", getEventExhibitorsHandler);
 router.get("/events/:id/speakers", getEventSpeakersHandler);

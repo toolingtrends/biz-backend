@@ -6,6 +6,7 @@ import {
   getExhibitorAnalyticsHandler,
   getExhibitorEventsHandler,
   createExhibitorHandler,
+  getExhibitorLeadsCountHandler,
   getExhibitorReviewsHandler,
   createExhibitorReviewHandler,
   createExhibitorReviewReplyHandler,
@@ -14,7 +15,7 @@ import {
   updateExhibitorProductHandler,
   deleteExhibitorProductHandler,
 } from "./exhibitors.controller";
-import { requireUser } from "../../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
 const router = Router();
 
@@ -33,10 +34,13 @@ router.get("/exhibitors/:id/analytics", getExhibitorAnalyticsHandler);
 // Exhibitor events
 router.get("/exhibitors/:exhibitorId/events", getExhibitorEventsHandler);
 
+// Exhibitor leads count (follow + connect, for overview card)
+router.get("/exhibitors/:id/leads-count", getExhibitorLeadsCountHandler);
+
 // Exhibitor reviews (list, create, reply)
 router.get("/exhibitors/:id/reviews", getExhibitorReviewsHandler);
 router.post("/exhibitors/:id/reviews/:reviewId/replies", requireUser, createExhibitorReviewReplyHandler);
-router.post("/exhibitors/:id/reviews", createExhibitorReviewHandler);
+router.post("/exhibitors/:id/reviews", optionalUser, createExhibitorReviewHandler);
 
 // Exhibitor products (list, create, update, delete)
 router.get("/exhibitors/:id/products", getExhibitorProductsHandler);

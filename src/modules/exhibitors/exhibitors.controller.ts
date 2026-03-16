@@ -9,6 +9,7 @@ import {
   listExhibitorReviews,
   createExhibitorReview,
   addExhibitorReviewReply,
+  getExhibitorLeadsCount,
   listExhibitorProducts,
   createExhibitorProduct,
   updateExhibitorProduct,
@@ -123,6 +124,21 @@ export async function getExhibitorEventsHandler(req: Request, res: Response) {
     }
     // eslint-disable-next-line no-console
     console.error("Error fetching exhibitor events (backend):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function getExhibitorLeadsCountHandler(req: Request, res: Response) {
+  try {
+    const exhibitorId = req.params.id;
+    if (!exhibitorId) {
+      return res.status(400).json({ error: "exhibitor id is required" });
+    }
+    const count = await getExhibitorLeadsCount(exhibitorId);
+    return res.json({ count, totalLeads: count });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error fetching exhibitor leads count (backend):", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 }

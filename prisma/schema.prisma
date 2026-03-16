@@ -292,6 +292,7 @@ model User {
   venueImages      String[] @default([])
   venueVideos      String[] @default([])
   floorPlans       String[] @default([])
+  meetingSpaces    Json?   // Halls: array of { id, name, capacity, area, hourlyRate?, features? }
   virtualTour      String?
   basePrice        Float?
   venueCurrency    String  @default("USD")
@@ -329,6 +330,10 @@ model User {
   // Network: connection requests (sent and received)
   connectionsSent     Connection[] @relation("ConnectionRequester")
   connectionsReceived Connection[] @relation("ConnectionReceiver")
+
+  // Follow: users who follow this user (e.g. exhibitor followers)
+  followersAsFollowed Follow[] @relation("UserAsFollowing")
+  followingAsFollower Follow[] @relation("UserAsFollower")
 
   // Messaging: conversations and messages
   conversationParticipants ConversationParticipant[]
@@ -824,6 +829,22 @@ model VenueAppointment {
   @@index([visitorId])
   @@index([status])
   @@map("venue_appointments")
+}
+
+// ─── Follow: user follows another user (e.g. follow exhibitor) ─────────────────
+model Follow {
+  id           String   @id @default(uuid()) @db.Uuid
+  followerId   String   @db.Uuid
+  followingId  String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  follower  User @relation("UserAsFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserAsFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
 }
 
 // ─── Network: user connections (LinkedIn-style) ───────────────────────────────

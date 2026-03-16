@@ -179,6 +179,13 @@ export async function getOrganizerById(id: string) {
     },
   });
 
+  const allEventsAttendeesCount = await prisma.eventLead.count({
+    where: {
+      event: { organizerId: id },
+      type: "attendee",
+    },
+  });
+
   const organizerData = {
     id: organizer.id,
     name: `${organizer.firstName} ${organizer.lastName}`,
@@ -192,7 +199,7 @@ export async function getOrganizerById(id: string) {
     avatar: organizer.avatar || "/placeholder.svg?height=100&width=100&text=Avatar",
     totalEvents: eventStats._count.id,
     activeEvents: activeEventStats._count.id,
-    totalAttendees: attendeeStats._count.id,
+    totalAttendees: allEventsAttendeesCount,
     totalRevenue: attendeeStats._sum.totalAmount || 0,
     founded: organizer.founded || "2020",
     teamSize: organizer.teamSize || "1-10",
@@ -730,7 +737,7 @@ export async function getOrganizerTotalAttendees(id: string) {
       eventId: {
         in: eventIds,
       },
-      type: "ATTENDEE",
+      type: "attendee",
     },
     include: {
       user: {

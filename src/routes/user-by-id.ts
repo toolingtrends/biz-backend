@@ -7,11 +7,40 @@ const router = Router();
 function serializeUser(user: any) {
   return {
     ...user,
+    companyIndustry: user.companyIndustry ?? null,
     interests: user.interests ?? [],
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    lastLogin: user.lastLogin?.toISOString() ?? null,
+    createdAt: user.createdAt?.toISOString?.() ?? user.createdAt,
+    updatedAt: user.updatedAt?.toISOString?.() ?? user.updatedAt,
+    lastLogin: user.lastLogin?.toISOString?.() ?? user.lastLogin ?? null,
     _count: { eventsAttended: 0, eventsOrganized: 0, connections: 0 },
+  };
+}
+
+/** Map Prisma event (with venue, ticketTypes) to frontend dashboard shape. */
+function toFrontendEvent(event: any): any {
+  const venue = event?.venue;
+  return {
+    id: event.id,
+    title: event.title,
+    description: event.description,
+    shortDescription: event.shortDescription ?? "",
+    startDate: event.startDate instanceof Date ? event.startDate.toISOString() : event.startDate,
+    endDate: event.endDate instanceof Date ? event.endDate.toISOString() : event.endDate,
+    location: venue?.venueName ?? null,
+    city: venue?.venueCity ?? null,
+    state: venue?.venueState ?? null,
+    address: venue?.venueAddress ?? null,
+    category: Array.isArray(event.category) ? event.category[0] : "Event",
+    categories: event.category ?? [],
+    status: event.status,
+    type: Array.isArray(event.eventType) ? event.eventType[0] : "General",
+    eventTypes: event.eventType ?? [],
+    bannerImage: event.bannerImage ?? "",
+    thumbnailImage: event.thumbnailImage ?? "",
+    maxAttendees: event.maxAttendees ?? 0,
+    organizer: event.organizer ?? null,
+    venue: venue ?? null,
+    ticketTypes: event.ticketTypes ?? [],
   };
 }
 
@@ -267,7 +296,7 @@ router.get("/users/:id/connections", async (req: Request, res: Response) => {
 
 /**
  * GET /api/users/:id/interested-events
- * Used by calendar, past-events, and events-section to show a user's followed/saved events.
+ * Used by calendar, past-events, and events-section to show a user's saved (interested) events.
  */
 router.get(
   "/users/:id/interested-events",
@@ -287,15 +316,18 @@ router.get(
           event: {
             include: {
               ticketTypes: true,
+              venue: true,
+              organizer: true,
             },
           },
         },
         orderBy: { savedAt: "desc" },
       });
 
-      const events = saved
+      const rawEvents = saved
         .map((s) => s.event)
         .filter((e): e is NonNullable<typeof e> => Boolean(e));
+      const events = rawEvents.map((e) => toFrontendEvent(e));
 
       return res.json({
         success: true,
@@ -314,15 +346,21 @@ router.get(
 
 /**
  * GET /api/users/:id/saved-events
- * Saved events timeline in visitor dashboard.
+ * Saved events (wishlist) timeline in visitor dashboard. JWT required; user can only fetch own list.
  */
-router.get("/users/:id/saved-events", async (req: Request, res: Response) => {
+router.get("/users/:id/saved-events", requireUser, async (req: Request, res: Response) => {
   const { id } = req.params;
+  const auth = req.auth;
 
   if (!id) {
     return res
       .status(400)
       .json({ success: false, error: "User id required" });
+  }
+  if (!auth || auth.sub !== id) {
+    return res
+      .status(403)
+      .json({ success: false, error: "You can only view your own saved events" });
   }
 
   try {
@@ -332,15 +370,18 @@ router.get("/users/:id/saved-events", async (req: Request, res: Response) => {
         event: {
           include: {
             ticketTypes: true,
+            venue: true,
+            organizer: true,
           },
         },
       },
       orderBy: { savedAt: "desc" },
     });
 
-    const events = saved
+    const rawEvents = saved
       .map((s) => s.event)
       .filter((e): e is NonNullable<typeof e> => Boolean(e));
+    const events = rawEvents.map((e) => toFrontendEvent(e));
 
     return res.json({
       success: true,

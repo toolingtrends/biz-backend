@@ -15,6 +15,7 @@ import exhibitorManualsRouter from "../modules/exhibitor-manuals/exhibitor-manua
 import contentRouter from "./content";
 import reviewsRouter from "./reviews";
 import connectionsRouter from "../modules/network/connections.routes";
+import followRouter from "../modules/follow/follow.routes";
 import networkRouter from "../modules/network/network.routes";
 import conversationsRouter from "../modules/messages/conversations.routes";
 import messagesRouter from "../modules/messages/messages.routes";
@@ -81,6 +82,9 @@ router.use("/", reviewsRouter);
 
 // Network: connections (LinkedIn-style)
 router.use("/connections", connectionsRouter);
+
+// Follow: follow/unfollow user (e.g. follow exhibitor)
+router.use("/follow", followRouter);
 
 // Messaging: conversations and messages
 router.use("/conversations", conversationsRouter);

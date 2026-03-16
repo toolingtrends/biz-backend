@@ -215,6 +215,20 @@ export async function getExhibitorById(id: string) {
     return null;
   }
 
+  // Compute total and active events from ExhibitorBooth (User.totalEvents/activeEvents may be stale)
+  const now = new Date();
+  const [totalEventsCount, activeEventsCount] = await Promise.all([
+    prisma.exhibitorBooth.count({ where: { exhibitorId: id } }),
+    prisma.exhibitorBooth.count({
+      where: {
+        exhibitorId: id,
+        event: {
+          endDate: { gte: now },
+        },
+      },
+    }),
+  ]);
+
   return {
     id: user.id,
     email: user.email ?? "",
@@ -242,8 +256,8 @@ export async function getExhibitorById(id: string) {
     businessEmail: user.businessEmail ?? undefined,
     businessPhone: user.businessPhone ?? undefined,
     businessAddress: user.businessAddress ?? undefined,
-    totalEvents: user.totalEvents ?? 0,
-    activeEvents: user.activeEvents ?? 0,
+    totalEvents: totalEventsCount,
+    activeEvents: activeEventsCount,
   };
 }
 
@@ -463,6 +477,7 @@ export async function listExhibitorReviews(exhibitorId: string) {
           id: true,
           firstName: true,
           lastName: true,
+          email: true,
           avatar: true,
         },
       },
@@ -473,6 +488,7 @@ export async function listExhibitorReviews(exhibitorId: string) {
               id: true,
               firstName: true,
               lastName: true,
+              email: true,
               avatar: true,
             },
           },
@@ -482,11 +498,17 @@ export async function listExhibitorReviews(exhibitorId: string) {
     },
     orderBy: { createdAt: "desc" },
   });
-  const toUserDisplay = (u: { id: string; firstName: string | null; lastName: string | null; avatar: string | null } | null) => {
-    if (!u) return { id: "", firstName: "Guest", lastName: "", avatar: undefined as string | undefined };
-    const first = (u.firstName ?? "").trim() || "Guest";
+  const toUserDisplay = (u: { id: string; firstName: string | null; lastName: string | null; email: string | null; avatar: string | null } | null) => {
+    if (!u) return { id: "", firstName: "Anonymous", lastName: "", avatar: undefined as string | undefined };
+    const first = (u.firstName ?? "").trim();
     const last = (u.lastName ?? "").trim();
-    return { id: u.id, firstName: first, lastName: last, avatar: u.avatar ?? undefined };
+    if (first || last) {
+      return { id: u.id, firstName: first, lastName: last, avatar: u.avatar ?? undefined };
+    }
+    const email = (u.email ?? "").trim();
+    const fromEmail = email ? email.split("@")[0] : "";
+    const displayName = fromEmail || "Visitor";
+    return { id: u.id, firstName: displayName, lastName: "", avatar: u.avatar ?? undefined };
   };
 
   return rows.map((r) => ({
@@ -504,6 +526,36 @@ export async function listExhibitorReviews(exhibitorId: string) {
       user: toUserDisplay(rep.user),
     })),
   }));
+}
+
+/** Leads count = distinct users who followed this exhibitor OR have a connection (Connect) with them (PENDING or ACCEPTED). */
+export async function getExhibitorLeadsCount(exhibitorId: string): Promise<number> {
+  if (!exhibitorId) return 0;
+
+  const [followerRows, connectionRows] = await Promise.all([
+    (prisma as any).follow.findMany({
+      where: { followingId: exhibitorId },
+      select: { followerId: true },
+    }),
+    (prisma as any).connection.findMany({
+      where: {
+        OR: [
+          { requesterId: exhibitorId, status: { in: ["PENDING", "ACCEPTED"] } },
+          { receiverId: exhibitorId, status: { in: ["PENDING", "ACCEPTED"] } },
+        ],
+      },
+      select: { requesterId: true, receiverId: true },
+    }),
+  ]);
+
+  const leadIds = new Set<string>();
+  (followerRows as { followerId: string }[]).forEach((r) => leadIds.add(r.followerId));
+  (connectionRows as { requesterId: string; receiverId: string }[]).forEach((r) => {
+    leadIds.add(r.requesterId);
+    leadIds.add(r.receiverId);
+  });
+  leadIds.delete(exhibitorId);
+  return leadIds.size;
 }
 
 export async function addExhibitorReviewReply(
@@ -568,25 +620,28 @@ export async function createExhibitorReview(
           id: true,
           firstName: true,
           lastName: true,
+          email: true,
           avatar: true,
         },
       },
     },
   });
+  const toDisplay = (u: typeof review.user) => {
+    if (!u) return { id: "", firstName: "Anonymous", lastName: "", avatar: undefined as string | undefined };
+    const first = (u.firstName ?? "").trim();
+    const last = (u.lastName ?? "").trim();
+    if (first || last) return { id: u.id, firstName: first, lastName: last, avatar: u.avatar ?? undefined };
+    const email = (u.email ?? "").trim();
+    const fromEmail = email ? email.split("@")[0] : "";
+    return { id: u.id, firstName: fromEmail || "Visitor", lastName: "", avatar: u.avatar ?? undefined };
+  };
   return {
     id: review.id,
     rating: review.rating ?? 0,
     title: "",
     comment: review.comment ?? "",
     createdAt: review.createdAt.toISOString(),
-    user: review.user
-      ? {
-          id: review.user.id,
-          firstName: review.user.firstName,
-          lastName: review.user.lastName,
-          avatar: review.user.avatar ?? undefined,
-        }
-      : { id: "", firstName: "Unknown", lastName: "", avatar: undefined },
+    user: toDisplay(review.user),
     replies: [],
   };
 }

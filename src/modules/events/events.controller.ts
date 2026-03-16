@@ -14,6 +14,7 @@ import {
   listRecentEvents,
   listVipEvents,
   listEventLeads,
+  listEventAttendees,
   listEventExhibitors,
   listEventSpeakers,
   getEventBrochureAndDocuments,
@@ -163,6 +164,25 @@ export async function getVipEventsHandler(_req: Request, res: Response) {
 }
 
 // ----- Event sub-resources -----
+
+export async function getEventAttendeesHandler(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const attendeeLeads = await listEventAttendees(id);
+    return res.json({
+      success: true,
+      attendeeLeads,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error fetching event attendees (backend):", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch event attendees",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+}
 
 export async function getEventLeadsHandler(req: Request, res: Response) {
   try {

@@ -673,6 +673,8 @@ export async function listEventLeads(eventId: string) {
           lastName: true,
           email: true,
           phone: true,
+          company: true,
+          jobTitle: true,
           avatar: true,
         },
       },
@@ -681,6 +683,7 @@ export async function listEventLeads(eventId: string) {
           id: true,
           title: true,
           startDate: true,
+          images: true,
         },
       },
     },
@@ -688,6 +691,63 @@ export async function listEventLeads(eventId: string) {
   });
 
   return leads;
+}
+
+/** List only attendee-type leads for an event (for Attendees Management dashboard). */
+export async function listEventAttendees(eventId: string) {
+  const leads = await prisma.eventLead.findMany({
+    where: { eventId, type: "attendee", userId: { not: null } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          company: true,
+          jobTitle: true,
+          avatar: true,
+        },
+      },
+      event: {
+        select: {
+          id: true,
+          title: true,
+          startDate: true,
+          images: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return leads.map((lead) => ({
+    id: lead.id,
+    status: lead.status ?? "NEW",
+    notes: lead.notes ?? undefined,
+    createdAt: lead.createdAt.toISOString(),
+    user: lead.user
+      ? {
+          id: lead.user.id,
+          firstName: lead.user.firstName,
+          lastName: lead.user.lastName,
+          email: lead.user.email,
+          phone: lead.user.phone ?? undefined,
+          company: lead.user.company ?? undefined,
+          jobTitle: lead.user.jobTitle ?? undefined,
+          avatar: lead.user.avatar ?? undefined,
+        }
+      : null,
+    event: lead.event
+      ? {
+          id: lead.event.id,
+          title: lead.event.title,
+          startDate: lead.event.startDate instanceof Date ? lead.event.startDate.toISOString() : lead.event.startDate,
+          images: lead.event.images ?? [],
+        }
+      : null,
+  }));
 }
 
 // Create or reuse an event lead (user interest in event)

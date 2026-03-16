@@ -82,7 +82,7 @@ router.get("/venue-manager/:id", async (req, res) => {
       videos: (venueManager.venueVideos as string[] | null) ?? [],
       floorPlans: (venueManager.floorPlans as string[] | null) ?? [],
       virtualTour: venueManager.virtualTour ?? "",
-      meetingSpaces: [], // Meeting spaces not yet modeled in backend schema
+      meetingSpaces: (venueManager.meetingSpaces as any[] | null) ?? [],
       reviews: [], // Venue reviews not yet modeled in backend schema
       createdAt: venueManager.createdAt.toISOString(),
       updatedAt: venueManager.updatedAt.toISOString(),
@@ -353,6 +353,17 @@ router.put("/venue-manager/:id", async (req, res) => {
         venueImages: venueImages ?? undefined,
         venueVideos: venueVideos ?? undefined,
         floorPlans: floorPlans ?? undefined,
+        meetingSpaces:
+          Array.isArray(meetingSpaces)
+            ? meetingSpaces.map((s: any) => ({
+                id: s?.id ?? `sp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                name: s?.name ?? "",
+                capacity: s?.capacity !== undefined ? Number(s.capacity) : 0,
+                area: s?.area !== undefined ? Number(s.area) : 0,
+                hourlyRate: s?.hourlyRate !== undefined ? Number(s.hourlyRate) : 0,
+                features: Array.isArray(s?.features) ? s.features : (typeof s?.features === "string" ? s.features.split(",").map((f: string) => f.trim()).filter(Boolean) : []),
+              }))
+            : [],
         virtualTour: virtualTour ?? undefined,
         latitude:
           latitude !== undefined ? parseFloat(String(latitude)) : undefined,
@@ -364,26 +375,7 @@ router.put("/venue-manager/:id", async (req, res) => {
       },
     });
 
-    // Meeting spaces are not persisted yet; normalize what the frontend sent
-    const normalizedMeetingSpaces = Array.isArray(meetingSpaces)
-      ? meetingSpaces.map((space: any) => ({
-          name: space?.name || "",
-          capacity:
-            space?.capacity !== undefined
-              ? Number(space.capacity)
-              : 0,
-          area:
-            space?.area !== undefined
-              ? Number(space.area)
-              : 0,
-          hourlyRate:
-            space?.hourlyRate !== undefined
-              ? Number(space.hourlyRate)
-              : 0,
-          isAvailable: space?.isAvailable !== false,
-          features: space?.features || [],
-        }))
-      : [];
+    const savedMeetingSpaces = (updatedVenue.meetingSpaces as any[] | null) ?? [];
 
     const venue = {
       id: updatedVenue.id,
@@ -409,7 +401,7 @@ router.put("/venue-manager/:id", async (req, res) => {
       averageRating: updatedVenue.averageRating || 0,
       totalReviews: updatedVenue.totalReviews || 0,
       amenities: (updatedVenue.amenities as string[] | null) || [],
-      meetingSpaces: normalizedMeetingSpaces,
+      meetingSpaces: savedMeetingSpaces,
       venueImages: (updatedVenue.venueImages as string[] | null) || [],
       venueVideos: (updatedVenue.venueVideos as string[] | null) || [],
       floorPlans: (updatedVenue.floorPlans as string[] | null) || [],

@@ -28,6 +28,25 @@ export function requireUserOrInternal(req: Request, res: Response, next: NextFun
   return requireUser(req, res, next);
 }
 
+/** If a valid JWT is present, set req.auth; otherwise continue without it (no 401). Use for routes that support both anonymous and logged-in users. */
+export function optionalUser(req: Request, _res: Response, next: NextFunction) {
+  try {
+    const token = extractTokenFromHeader(req);
+    if (!token) return next();
+
+    const payload = AuthService.verifyAccessToken(token);
+    req.auth = payload;
+
+    const userId = payload.sub;
+    if (userId && userId !== "internal") {
+      prisma.user.update({ where: { id: userId }, data: { lastLogin: new Date() } }).catch(() => {});
+    }
+    return next();
+  } catch {
+    return next();
+  }
+}
+
 export function requireUser(req: Request, res: Response, next: NextFunction) {
   try {
     const token = extractTokenFromHeader(req);
