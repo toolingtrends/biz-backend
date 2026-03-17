@@ -45,8 +45,13 @@ export async function listVenues(params: ListVenuesParams) {
         totalReviews: true,
         amenities: true,
         venueCurrency: true,
+        avatar: true,
+        venueImages: true,
         createdAt: true,
         updatedAt: true,
+        _count: {
+          select: { venueEvents: true },
+        },
       },
       skip,
       take: limit,
@@ -55,8 +60,33 @@ export async function listVenues(params: ListVenuesParams) {
     prisma.user.count({ where }),
   ]);
 
+  const transformedVenues = venues.map((v: any) => {
+    const images = Array.isArray(v.venueImages) && v.venueImages.length > 0
+      ? v.venueImages
+      : v.avatar
+        ? [v.avatar]
+        : [];
+    const addressParts = [v.venueAddress, v.venueCity, v.venueState, v.venueCountry].filter(Boolean);
+    const address = addressParts.length > 0 ? addressParts.join(", ") : "";
+    return {
+      ...v,
+      name: v.venueName || "Venue",
+      images,
+      eventCount: v._count?.venueEvents ?? 0,
+      rating: v.averageRating != null ? Number(v.averageRating) : null,
+      reviewCount: v.totalReviews != null ? Number(v.totalReviews) : 0,
+      location: {
+        address: v.venueAddress || "",
+        city: v.venueCity || "",
+        state: v.venueState || "",
+        country: v.venueCountry || "",
+      },
+      address,
+    };
+  });
+
   return {
-    venues,
+    venues: transformedVenues,
     pagination: {
       page,
       limit,

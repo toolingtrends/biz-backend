@@ -142,6 +142,7 @@ export async function listEvents(params: ListEventsParams) {
               where: { status: "CONFIRMED" },
             },
             reviews: true,
+            savedEvents: true,
           },
         },
         reviews: {
@@ -182,6 +183,15 @@ export async function listEvents(params: ListEventsParams) {
       state: event.venue?.venueState || "",
       country: event.venue?.venueCountry || "",
       address: event.venue?.venueAddress || "",
+      venue: event.venue
+        ? {
+            venueName: event.venue.venueName,
+            venueCity: event.venue.venueCity,
+            venueState: event.venue.venueState,
+            venueCountry: event.venue.venueCountry,
+            venueAddress: event.venue.venueAddress,
+          }
+        : null,
       isVirtual: event.isVirtual,
       virtualLink: event.virtualLink,
       status: statusMap[event.status] || "Pending Review",
@@ -195,6 +205,7 @@ export async function listEvents(params: ListEventsParams) {
       verifiedBy: event.verifiedBy || "",
       attendees: event._count.registrations,
       totalReviews: event._count.reviews,
+      followersCount: event._count.savedEvents ?? 0,
       averageRating: avgRating,
       cheapestTicket,
       currency: event.currency,
