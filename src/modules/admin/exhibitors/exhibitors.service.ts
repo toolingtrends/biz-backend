@@ -115,3 +115,84 @@ export async function getExhibitorStats() {
   ]);
   return { total, active };
 }
+
+// ---------- Exhibitor feedback (admin dashboard: organizer feedback page) ----------
+
+export type AdminExhibitorFeedbackItem = {
+  id: string;
+  organizer: { id: string; name: string; email: string };
+  exhibitor: { id: string; name: string; email: string };
+  event: { id: string | null; title: string | null };
+  rating: number;
+  title: string | null;
+  comment: string | null;
+  isApproved: boolean;
+  isPublic: boolean;
+  createdAt: string;
+};
+
+export async function listExhibitorFeedbackForAdmin(): Promise<AdminExhibitorFeedbackItem[]> {
+  const reviews = await prisma.review.findMany({
+    where: { exhibitorId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+      event: {
+        select: {
+          id: true,
+          title: true,
+          organizerId: true,
+          organizer: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      },
+    },
+  });
+
+  const exhibitorIds = [...new Set(reviews.map((r) => r.exhibitorId).filter(Boolean) as string[])];
+  const exhibitors =
+    exhibitorIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: exhibitorIds } },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        })
+      : [];
+  const exhibitorMap = new Map(exhibitors.map((e) => [e.id, e]));
+
+  const name = (first: string | null, last: string | null, fallback: string) =>
+    `${first ?? ""} ${last ?? ""}`.trim() || fallback;
+
+  return reviews.map((r) => {
+    const organizer = r.event?.organizer;
+    const exhibitor = r.exhibitorId ? exhibitorMap.get(r.exhibitorId) : null;
+    return {
+      id: r.id,
+      organizer: organizer
+        ? {
+            id: organizer.id,
+            name: name(organizer.firstName, organizer.lastName, "Organizer"),
+            email: organizer.email ?? "",
+          }
+        : { id: "", name: "—", email: "" },
+      exhibitor: exhibitor
+        ? {
+            id: exhibitor.id,
+            name: name(exhibitor.firstName, exhibitor.lastName, "Exhibitor"),
+            email: exhibitor.email ?? "",
+          }
+        : { id: r.exhibitorId ?? "", name: "—", email: "" },
+      event: r.event
+        ? { id: r.event.id, title: r.event.title }
+        : { id: null, title: null },
+      rating: r.rating ?? 0,
+      title: null,
+      comment: r.comment ?? null,
+      isApproved: true,
+      isPublic: true,
+      createdAt: r.createdAt.toISOString(),
+    };
+  });
+}

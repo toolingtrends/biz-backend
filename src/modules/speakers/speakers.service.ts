@@ -38,7 +38,12 @@ export async function listSpeakers() {
     },
   });
 
-  return speakers;
+  return speakers.map((s) => ({
+    ...s,
+    specialties: Array.isArray(s.specialties) ? s.specialties : [],
+    achievements: Array.isArray(s.achievements) ? s.achievements : [],
+    certifications: Array.isArray(s.certifications) ? s.certifications : [],
+  }));
 }
 
 // Single speaker profile

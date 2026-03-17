@@ -59,3 +59,24 @@ export async function remove(req: Request, res: Response) {
     return sendError(res, 500, "Failed to delete exhibitor", e?.message);
   }
 }
+
+export async function listExhibitorFeedback(req: Request, res: Response) {
+  try {
+    const items = await service.listExhibitorFeedbackForAdmin();
+    return res.json(items);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to list exhibitor feedback", e?.message);
+  }
+}
+
+export async function updateExhibitorFeedback(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { action } = req.body ?? {};
+    if (!id) return sendError(res, 400, "Review id required");
+    // Optional: persist approval state if Review gets isApproved/isPublic later
+    return res.json({ success: true, id, action: action ?? "approved" });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to update feedback", e?.message);
+  }
+}

@@ -50,3 +50,32 @@ export async function remove(req: Request, res: Response) {
     return sendError(res, 500, "Failed to delete organizer", e?.message);
   }
 }
+
+export async function listOrganizerConnections(req: Request, res: Response) {
+  try {
+    const items = await service.listOrganizerConnectionsForAdmin();
+    // Frontend expects a plain array
+    return res.json(items);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to list organizer connections", e?.message);
+  }
+}
+
+export async function getOrganizerConnectionsDetail(req: Request, res: Response) {
+  try {
+    const detail = await service.getOrganizerConnectionsDetailForAdmin(req.params.id);
+    if (!detail) return sendError(res, 404, "Organizer not found");
+    return res.json(detail);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to get organizer connections detail", e?.message);
+  }
+}
+
+export async function listVenueBookings(req: Request, res: Response) {
+  try {
+    const items = await service.listVenueBookingsForAdmin();
+    return res.json({ data: items });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to list venue bookings", e?.message);
+  }
+}

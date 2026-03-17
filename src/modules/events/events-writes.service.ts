@@ -259,7 +259,8 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     shortDescription:
       body.shortDescription || (body.description ? String(body.description).substring(0, 200) : null),
     slug,
-    status: (body.status?.toUpperCase() as EventStatus) || "DRAFT",
+    // Admin-created events are always approved (PUBLISHED) so they are not stuck in Drafts
+    status: "PUBLISHED" as EventStatus,
     category: parseCategory(body.categories || body.category || body.eventCategories),
     tags: Array.isArray(body.tags) ? body.tags : [],
     eventType: body.eventType ? [body.eventType].flat() : [],

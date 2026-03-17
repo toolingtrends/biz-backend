@@ -299,6 +299,24 @@ export async function adminUpdateEvent(
     }
   }
 
+  // Map frontend status labels to Prisma EventStatus enum (so "Approved" -> PUBLISHED, etc.)
+  if (raw.status !== undefined && typeof raw.status === "string") {
+    const statusMap: Record<string, EventStatus> = {
+      Approved: EventStatus.PUBLISHED,
+      "Pending Review": EventStatus.PENDING_APPROVAL,
+      Draft: EventStatus.DRAFT,
+      Rejected: EventStatus.REJECTED,
+      Flagged: EventStatus.CANCELLED,
+      PUBLISHED: EventStatus.PUBLISHED,
+      PENDING_APPROVAL: EventStatus.PENDING_APPROVAL,
+      DRAFT: EventStatus.DRAFT,
+      REJECTED: EventStatus.REJECTED,
+      CANCELLED: EventStatus.CANCELLED,
+      COMPLETED: EventStatus.COMPLETED,
+    };
+    raw.status = statusMap[raw.status] ?? raw.status;
+  }
+
   // Prisma expects category, tags, eventType as String[] — never pass string
   const toStrArray = (v: unknown): string[] => {
     if (Array.isArray(v)) {

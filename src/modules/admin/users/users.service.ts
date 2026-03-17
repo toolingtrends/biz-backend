@@ -16,28 +16,41 @@ export async function listUsers(query: Record<string, unknown>) {
       { company: { contains: search, mode: "insensitive" } },
     ];
   }
+  const select: any = {
+    id: true,
+    firstName: true,
+    lastName: true,
+    email: true,
+    phone: true,
+    role: true,
+    company: true,
+    isActive: true,
+    createdAt: true,
+    updatedAt: true,
+  };
+  if (roleFilter === "ORGANIZER") {
+    select.organizationName = true;
+  }
+  if (roleFilter === "VENUE_MANAGER") {
+    select.venueName = true;
+    select.venueAddress = true;
+    select.venueCity = true;
+    select.venueState = true;
+    select.venueCountry = true;
+    select.maxCapacity = true;
+    select.amenities = true;
+  }
   const [items, total] = await Promise.all([
     prisma.user.findMany({
       where,
       skip,
       take: limit,
       orderBy: { [sort]: order },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        role: true,
-        company: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select,
     }),
     prisma.user.count({ where }),
   ]);
-  const data = items.map((u) => ({
+  const data = items.map((u: any) => ({
     id: u.id,
     name: `${u.firstName || ""} ${u.lastName || ""}`.trim(),
     firstName: u.firstName,
@@ -46,6 +59,14 @@ export async function listUsers(query: Record<string, unknown>) {
     phone: u.phone,
     role: u.role,
     company: u.company,
+    organizationName: u.organizationName ?? undefined,
+    venueName: u.venueName ?? undefined,
+    venueAddress: u.venueAddress ?? undefined,
+    venueCity: u.venueCity ?? undefined,
+    venueState: u.venueState ?? undefined,
+    venueCountry: u.venueCountry ?? undefined,
+    maxCapacity: u.maxCapacity ?? undefined,
+    amenities: Array.isArray(u.amenities) ? u.amenities : [],
     isActive: u.isActive,
     createdAt: u.createdAt.toISOString(),
     updatedAt: u.updatedAt.toISOString(),
