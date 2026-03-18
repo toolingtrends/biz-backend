@@ -52,7 +52,7 @@ export async function uploadImage(
   return uploadInternal(file, {
     folder,
     resource_type: "image",
-    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif", "svg"],
+    allowed_formats: ["jpg", "jpeg", "png", "webp", "gif", "svg", "avif"],
   });
 }
 

@@ -762,7 +762,10 @@ model Review {
   venueId      String?       @db.Uuid
   organizerId  String?       @db.Uuid
   rating       Int?
+  title        String?
   comment      String?
+  isApproved   Boolean       @default(false)
+  isPublic     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   replies      ReviewReply[]
@@ -961,4 +964,44 @@ model ConversationSummary {
   @@index([userId])
   @@index([conversationId])
   @@map("conversation_summaries")
+}
+
+// ─── Location Management (admin) ─────────────────────────────────────────────
+model Country {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique
+  code         String   @unique
+  flag         String?
+  flagPublicId String?
+  currency     String   @default("USD")
+  timezone     String   @default("UTC")
+  isActive     Boolean  @default(true)
+  isPermitted  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  cities       City[]
+  @@index([isActive])
+  @@index([isPermitted])
+  @@map("countries")
+}
+
+model City {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  countryId     String   @db.Uuid
+  country       Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  latitude      Float?
+  longitude     Float?
+  timezone      String   @default("UTC")
+  image         String?
+  imagePublicId String?
+  isActive      Boolean  @default(true)
+  isPermitted   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([name, countryId])
+  @@index([countryId])
+  @@index([isActive])
+  @@index([isPermitted])
+  @@map("cities")
 }

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { sendList, sendOne, sendError } from "../../../lib/admin-response";
 import * as service from "./exhibitors.service";
+import { updateEventAppointment } from "../../appointments/appointments.service";
 
 export async function list(req: Request, res: Response) {
   try {
@@ -78,5 +79,31 @@ export async function updateExhibitorFeedback(req: Request, res: Response) {
     return res.json({ success: true, id, action: action ?? "approved" });
   } catch (e: any) {
     return sendError(res, 500, "Failed to update feedback", e?.message);
+  }
+}
+
+export async function listExhibitorAppointments(req: Request, res: Response) {
+  try {
+    const appointments = await service.listExhibitorAppointmentsForAdmin();
+    return res.json({ appointments });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to list exhibitor appointments", e?.message);
+  }
+}
+
+export async function updateExhibitorAppointmentStatus(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { status, cancelReason } = req.body ?? {};
+    if (!id) return sendError(res, 400, "Appointment id required");
+    const result = await updateEventAppointment({
+      appointmentId: id,
+      status,
+      cancellationReason: cancelReason,
+    });
+    return res.json({ success: true, appointment: result.appointment });
+  } catch (e: any) {
+    if (e?.message?.includes("not found")) return sendError(res, 404, e.message);
+    return sendError(res, 500, "Failed to update appointment", e?.message);
   }
 }

@@ -157,7 +157,7 @@ export async function listExhibitorFeedbackForAdmin(): Promise<AdminExhibitorFee
     exhibitorIds.length > 0
       ? await prisma.user.findMany({
           where: { id: { in: exhibitorIds } },
-          select: { id: true, firstName: true, lastName: true, email: true },
+          select: { id: true, firstName: true, lastName: true, email: true, company: true },
         })
       : [];
   const exhibitorMap = new Map(exhibitors.map((e) => [e.id, e]));
@@ -177,13 +177,31 @@ export async function listExhibitorFeedbackForAdmin(): Promise<AdminExhibitorFee
             email: organizer.email ?? "",
           }
         : { id: "", name: "—", email: "" },
+      user: r.user
+        ? {
+            id: r.user.id,
+            firstName: r.user.firstName ?? "",
+            lastName: r.user.lastName ?? "",
+            email: r.user.email ?? "",
+          }
+        : { id: "", firstName: "", lastName: "", email: "" },
       exhibitor: exhibitor
         ? {
             id: exhibitor.id,
-            name: name(exhibitor.firstName, exhibitor.lastName, "Exhibitor"),
+            firstName: exhibitor.firstName ?? "",
+            lastName: exhibitor.lastName ?? "",
             email: exhibitor.email ?? "",
+            company: exhibitor.company ?? "",
+            name: name(exhibitor.firstName, exhibitor.lastName, "Exhibitor"),
           }
-        : { id: r.exhibitorId ?? "", name: "—", email: "" },
+        : {
+            id: r.exhibitorId ?? "",
+            firstName: "",
+            lastName: "",
+            email: "",
+            company: "",
+            name: "—",
+          },
       event: r.event
         ? { id: r.event.id, title: r.event.title }
         : { id: null, title: null },
@@ -193,6 +211,58 @@ export async function listExhibitorFeedbackForAdmin(): Promise<AdminExhibitorFee
       isApproved: true,
       isPublic: true,
       createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    };
+  });
+}
+
+// ---------- Admin exhibitor appointments (list all for admin dashboard) ----------
+
+export async function listExhibitorAppointmentsForAdmin() {
+  const appointments = await prisma.appointment.findMany({
+    orderBy: { createdAt: "desc" },
+    include: {
+      exhibitor: {
+        select: { id: true, firstName: true, lastName: true, email: true, company: true, avatar: true },
+      },
+      requester: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+      event: { select: { id: true, title: true } },
+    },
+  });
+  const name = (first: string | null, last: string | null) =>
+    `${first ?? ""} ${last ?? ""}`.trim() || "—";
+  return appointments.map((apt) => {
+    const reqDate = apt.requestedDate ? new Date(apt.requestedDate) : new Date();
+    const reqTime = apt.requestedTime || "09:00";
+    const scheduledAt = new Date(`${reqDate.toISOString().split("T")[0]}T${reqTime}:00.000Z`);
+    return {
+      id: apt.id,
+      exhibitor: {
+        id: apt.exhibitor.id,
+        companyName: apt.exhibitor.company ?? name(apt.exhibitor.firstName, apt.exhibitor.lastName),
+        email: apt.exhibitor.email ?? "",
+        logo: apt.exhibitor.avatar ?? undefined,
+      },
+      visitor: {
+        id: apt.requester.id,
+        name: name(apt.requester.firstName, apt.requester.lastName),
+        email: apt.requester.email ?? "",
+      },
+      event: {
+        id: apt.event.id,
+        name: apt.event.title,
+      },
+      scheduledAt: scheduledAt.toISOString(),
+      duration: apt.duration ?? 60,
+      status: apt.status as "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED",
+      meetingType: (apt.meetingType as "IN_PERSON" | "VIRTUAL") ?? "IN_PERSON",
+      location: apt.location ?? undefined,
+      notes: apt.notes ?? undefined,
+      cancelReason: apt.cancellationReason ?? undefined,
+      cancelledAt: apt.cancelledAt?.toISOString(),
+      createdAt: apt.createdAt.toISOString(),
     };
   });
 }

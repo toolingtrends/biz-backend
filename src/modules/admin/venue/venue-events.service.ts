@@ -1,0 +1,71 @@
+import prisma from "../../../config/prisma";
+import type { UserRole } from "@prisma/client";
+
+const ROLE: UserRole = "VENUE_MANAGER";
+
+export async function listVenueEventsForAdmin() {
+  const venues = await prisma.user.findMany({
+    where: { role: ROLE },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      venueName: true,
+      venueCity: true,
+      venueEvents: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          organizerId: true,
+          organizer: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      },
+    },
+  });
+
+  const now = new Date();
+  return venues.map((v) => {
+    const events = v.venueEvents || [];
+    const upcoming = events.filter((e) => new Date(e.startDate) > now).length;
+    const completed = events.filter((e) => new Date(e.endDate) < now).length;
+    const active = events.filter((e) => {
+      const start = new Date(e.startDate);
+      const end = new Date(e.endDate);
+      return start <= now && end >= now;
+    }).length;
+    return {
+      id: v.id,
+      venueId: v.id,
+      venueName: (v.venueName ?? `${v.firstName ?? ""} ${v.lastName ?? ""}`.trim()) || "Venue",
+      venueEmail: v.email ?? "",
+      venuePhone: v.phone ?? "",
+      venueCity: v.venueCity ?? "",
+      totalEvents: events.length,
+      upcomingEvents: upcoming,
+      completedEvents: completed,
+      activeEvents: active,
+      totalRevenue: 0,
+      averageRating: 0,
+      events: events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        status: e.status,
+        startDate: e.startDate.toISOString(),
+        endDate: e.endDate.toISOString(),
+        category: [],
+        attendees: 0,
+        organizerName: e.organizer
+          ? `${e.organizer.firstName ?? ""} ${e.organizer.lastName ?? ""}`.trim() || "Organizer"
+          : "",
+        organizerEmail: e.organizer?.email ?? "",
+      })),
+    };
+  });
+}

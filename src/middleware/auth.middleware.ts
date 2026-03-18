@@ -39,7 +39,7 @@ export function optionalUser(req: Request, _res: Response, next: NextFunction) {
 
     const userId = payload.sub;
     if (userId && userId !== "internal") {
-      prisma.user.update({ where: { id: userId }, data: { lastLogin: new Date() } }).catch(() => {});
+      prisma.user.updateMany({ where: { id: userId }, data: { lastLogin: new Date() } }).catch(() => {});
     }
     return next();
   } catch {
@@ -60,7 +60,7 @@ export function requireUser(req: Request, res: Response, next: NextFunction) {
     // Update lastLogin for presence (green dot); fire-and-forget to avoid blocking
     const userId = payload.sub;
     if (userId && userId !== "internal") {
-      prisma.user.update({ where: { id: userId }, data: { lastLogin: new Date() } }).catch(() => {});
+      prisma.user.updateMany({ where: { id: userId }, data: { lastLogin: new Date() } }).catch(() => {});
     }
 
     return next();

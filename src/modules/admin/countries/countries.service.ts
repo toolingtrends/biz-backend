@@ -1,0 +1,184 @@
+import prisma from "../../../config/prisma";
+
+export async function listCountries(includeCounts: boolean) {
+  const countries = await prisma.country.findMany({
+    include: {
+      cities: { where: { isActive: true }, orderBy: { name: "asc" } },
+      _count: { select: { cities: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  if (!includeCounts) {
+    return countries.map((c) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      flag: c.flag,
+      flagPublicId: c.flagPublicId,
+      currency: c.currency,
+      timezone: c.timezone,
+      isActive: c.isActive,
+      isPermitted: c.isPermitted,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+      eventCount: 0,
+      cityCount: c._count.cities,
+      cities: c.cities.map((city) => ({
+        ...city,
+        createdAt: city.createdAt.toISOString(),
+        updatedAt: city.updatedAt.toISOString(),
+      })),
+    }));
+  }
+
+  const withCounts = await Promise.all(
+    countries.map(async (country) => {
+      const cityCount = country._count.cities;
+      let eventCount = 0;
+      const venueCountryMatch = await prisma.event.count({
+        where: {
+          venue: {
+            OR: [
+              { venueCountry: country.name },
+              { venueCountry: { contains: country.name, mode: "insensitive" } },
+              { venueCountry: { contains: country.code, mode: "insensitive" } },
+            ],
+          },
+        },
+      });
+      eventCount += venueCountryMatch;
+      return {
+        id: country.id,
+        name: country.name,
+        code: country.code,
+        flag: country.flag,
+        flagPublicId: country.flagPublicId,
+        currency: country.currency,
+        timezone: country.timezone,
+        isActive: country.isActive,
+        isPermitted: country.isPermitted,
+        createdAt: country.createdAt.toISOString(),
+        updatedAt: country.updatedAt.toISOString(),
+        eventCount,
+        cityCount,
+        cities: country.cities.map((city) => ({
+          ...city,
+          createdAt: city.createdAt.toISOString(),
+          updatedAt: city.updatedAt.toISOString(),
+        })),
+      };
+    })
+  );
+  return withCounts;
+}
+
+export async function getCountryById(id: string) {
+  const country = await prisma.country.findUnique({
+    where: { id },
+    include: {
+      cities: { where: { isActive: true }, orderBy: { name: "asc" } },
+      _count: { select: { cities: true } },
+    },
+  });
+  if (!country) return null;
+  let eventCount = 0;
+  const venueCountryMatch = await prisma.event.count({
+    where: {
+      venue: {
+        OR: [
+          { venueCountry: country.name },
+          { venueCountry: { contains: country.name, mode: "insensitive" } },
+          { venueCountry: { contains: country.code, mode: "insensitive" } },
+        ],
+      },
+    },
+  });
+  eventCount += venueCountryMatch;
+  return {
+    ...country,
+    createdAt: country.createdAt.toISOString(),
+    updatedAt: country.updatedAt.toISOString(),
+    eventCount,
+    cityCount: country._count.cities,
+    cities: country.cities.map((c) => ({
+      ...c,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    })),
+  };
+}
+
+export async function createCountry(data: {
+  name: string;
+  code: string;
+  flag?: string;
+  flagPublicId?: string;
+  currency?: string;
+  timezone?: string;
+  isActive?: boolean;
+  isPermitted?: boolean;
+}) {
+  const existing = await prisma.country.findFirst({
+    where: {
+      OR: [
+        { name: { equals: data.name, mode: "insensitive" } },
+        { code: { equals: data.code.toUpperCase(), mode: "insensitive" } },
+      ],
+    },
+  });
+  if (existing) throw new Error("Country with this name or code already exists");
+  const country = await prisma.country.create({
+    data: {
+      name: data.name.trim(),
+      code: data.code.toUpperCase().trim(),
+      flag: data.flag ?? "",
+      flagPublicId: data.flagPublicId ?? null,
+      currency: data.currency ?? "USD",
+      timezone: data.timezone ?? "UTC",
+      isActive: data.isActive !== false,
+      isPermitted: !!data.isPermitted,
+    },
+  });
+  return {
+    ...country,
+    createdAt: country.createdAt.toISOString(),
+    updatedAt: country.updatedAt.toISOString(),
+    eventCount: 0,
+    cityCount: 0,
+  };
+}
+
+export async function updateCountry(
+  id: string,
+  data: Partial<{
+    name: string;
+    code: string;
+    flag: string;
+    flagPublicId: string;
+    currency: string;
+    timezone: string;
+    isActive: boolean;
+    isPermitted: boolean;
+  }>
+) {
+  const country = await prisma.country.update({
+    where: { id },
+    data: {
+      ...(data.name != null && { name: data.name.trim() }),
+      ...(data.code != null && { code: data.code.toUpperCase().trim() }),
+      ...(data.flag != null && { flag: data.flag }),
+      ...(data.flagPublicId != null && { flagPublicId: data.flagPublicId }),
+      ...(data.currency != null && { currency: data.currency }),
+      ...(data.timezone != null && { timezone: data.timezone }),
+      ...(typeof data.isActive === "boolean" && { isActive: data.isActive }),
+      ...(typeof data.isPermitted === "boolean" && { isPermitted: data.isPermitted }),
+    },
+  });
+  return await getCountryById(country.id);
+}
+
+export async function deleteCountry(id: string) {
+  await prisma.country.delete({ where: { id } });
+  return { deleted: true };
+}
