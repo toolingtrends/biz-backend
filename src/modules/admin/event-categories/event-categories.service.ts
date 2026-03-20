@@ -1,5 +1,14 @@
 import prisma from "../../../config/prisma";
 
+/** Active categories for public / organizer pickers (no counts). */
+export async function listActiveEventCategoriesPublic() {
+  return prisma.eventCategory.findMany({
+    where: { isActive: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, icon: true, color: true },
+  });
+}
+
 export async function listEventCategories() {
   const categories = await prisma.eventCategory.findMany({
     orderBy: { createdAt: "desc" },

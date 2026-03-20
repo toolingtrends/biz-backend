@@ -31,6 +31,20 @@ import {
 } from "./events.service";
 import { createEventAdmin, createSpeakerSession } from "./events-writes.service";
 import prisma from "../../config/prisma";
+import { listActiveEventCategoriesPublic } from "../admin/event-categories/event-categories.service";
+
+/** Public list of active event categories (organizer create-event, filters). */
+export async function getPublicEventCategoriesHandler(_req: Request, res: Response) {
+  try {
+    const categories = await listActiveEventCategoriesPublic();
+    return res.json({ success: true, data: categories });
+  } catch (e: any) {
+    return res.status(500).json({
+      success: false,
+      error: e?.message || "Failed to load event categories",
+    });
+  }
+}
 
 export async function getEventsHandler(req: Request, res: Response) {
   try {

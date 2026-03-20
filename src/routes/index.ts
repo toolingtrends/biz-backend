@@ -21,6 +21,7 @@ import followRouter from "../modules/follow/follow.routes";
 import networkRouter from "../modules/network/network.routes";
 import conversationsRouter from "../modules/messages/conversations.routes";
 import messagesRouter from "../modules/messages/messages.routes";
+import locationRouter from "../modules/location/location.routes";
 
 const router = Router();
 
@@ -51,6 +52,9 @@ router.use("/", venueManagerRouter);
 
 // Event networking discovery (must be before events router so /events/:eventId/network matches)
 router.use("/events", networkRouter);
+
+// Public location data (countries / cities for browse + venue forms)
+router.use("/location", locationRouter);
 
 // Events & search routes
 router.use("/", eventsRouter);

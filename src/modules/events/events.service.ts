@@ -442,35 +442,6 @@ export async function getCategoryStats() {
 }
 
 // Extended stats (cities/countries/categories) – mirrors app/api/events/stats
-const CITIES_LIST = [
-  "London",
-  "Dubai",
-  "Berlin",
-  "Amsterdam",
-  "Paris",
-  "Washington DC",
-  "New York",
-  "Barcelona",
-  "Kuala Lumpur",
-  "Orlando",
-  "Chicago",
-  "Munich",
-];
-
-const COUNTRIES_LIST = [
-  "USA",
-  "Germany",
-  "UK",
-  "Canada",
-  "UAE",
-  "India",
-  "Australia",
-  "China",
-  "Spain",
-  "Italy",
-  "France",
-  "Japan",
-];
 
 export interface EventStatsOptions {
   includeCategories?: boolean;
@@ -494,8 +465,15 @@ export async function getEventStats(options: EventStatsOptions) {
   }
 
   if (includeCities) {
+    const cityRows = await prisma.city.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { name: true },
+    });
+
     const cityCounts = await Promise.all(
-      CITIES_LIST.map(async (city) => {
+      cityRows.map(async (cityRow) => {
+        const city = cityRow.name;
         const count = await prisma.event.count({
           where: {
             status: "PUBLISHED",
@@ -518,17 +496,34 @@ export async function getEventStats(options: EventStatsOptions) {
   }
 
   if (includeCountries) {
+    const countryRows = await prisma.country.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { name: true, code: true },
+    });
+
     const countryCounts = await Promise.all(
-      COUNTRIES_LIST.map(async (country) => {
+      countryRows.map(async (countryRow) => {
+        const country = countryRow.name;
         const count = await prisma.event.count({
           where: {
             status: "PUBLISHED",
             isPublic: true,
             venue: {
-              venueCountry: {
-                contains: country,
-                mode: "insensitive",
-              },
+              OR: [
+                {
+                  venueCountry: {
+                    contains: countryRow.name,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  venueCountry: {
+                    contains: countryRow.code,
+                    mode: "insensitive",
+                  },
+                },
+              ],
             },
           },
         });
