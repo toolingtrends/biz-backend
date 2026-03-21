@@ -34,6 +34,7 @@ import integrationsRoutes from "./integrations/integrations.routes";
 import analyticsRoutes from "./analytics/analytics.routes";
 import marketingRoutes from "./marketing/marketing.routes";
 import promotionPackageRoutes from "./promotion-package/promotion-package.routes";
+import accountDeactivationRoutes from "./account-deactivation/account-deactivation.routes";
 
 const router = Router();
 
@@ -73,5 +74,6 @@ router.use("/integrations", integrationsRoutes);
 router.use("/analytics", analyticsRoutes);
 router.use("/marketing", marketingRoutes);
 router.use("/promotion-package", promotionPackageRoutes);
+router.use("/account-deactivations", accountDeactivationRoutes);
 
 export default router;

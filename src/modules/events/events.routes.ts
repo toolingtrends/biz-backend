@@ -34,7 +34,7 @@ import {
   createEventReviewHandler,
   getPublicEventCategoriesHandler,
 } from "./events.controller";
-import { requireUser } from "../../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
 const router = Router();
 
@@ -65,8 +65,8 @@ router.get("/events/:id/followers", getEventFollowersHandler);
 router.get("/events/:id/reviews", getEventReviewsHandler);
 router.post("/events/:id/reviews", requireUser, createEventReviewHandler);
 
-// Single event by id / slug / title
-router.get("/events/:id", getEventByIdHandler);
+// Single event by id / slug / title (optional JWT: organizer/venue host can view non-public listings)
+router.get("/events/:id", optionalUser, getEventByIdHandler);
 // Partial update (description, tags, images, brochure, layoutPlan)
 // NOTE: Left unauthenticated so organizer dashboard via Next.js can patch without backend JWT.
 router.patch("/events/:id", patchEventByIdHandler);

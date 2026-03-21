@@ -7,7 +7,7 @@ import {
   putSpeakerHandler,
   postSpeakerHandler,
 } from "./speakers.controller";
-import { requireUser } from "../../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
 const router = Router();
 
@@ -24,7 +24,7 @@ router.get("/speakers/:id", getSpeakerHandler);
 router.put("/speakers/:id", requireUser, putSpeakerHandler);
 
 // Speaker events
-router.get("/speakers/:id/events", getSpeakerEventsHandler);
+router.get("/speakers/:id/events", optionalUser, getSpeakerEventsHandler);
 
 // Speaker sessions (Presentation Materials)
 router.get("/speakers/:id/sessions", getSpeakerSessionsHandler);

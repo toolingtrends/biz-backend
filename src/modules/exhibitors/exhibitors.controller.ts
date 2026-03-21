@@ -53,7 +53,8 @@ export async function createExhibitorHandler(req: Request, res: Response) {
 export async function getExhibitorHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const exhibitor = await getExhibitorById(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const exhibitor = await getExhibitorById(id, viewerId);
 
     if (!exhibitor) {
       return res.status(404).json({ success: false, error: "Exhibitor not found" });
@@ -116,7 +117,8 @@ export async function getExhibitorEventsHandler(req: Request, res: Response) {
       return res.status(400).json({ error: "exhibitorId is required" });
     }
 
-    const events = await getExhibitorEvents(exhibitorId);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const events = await getExhibitorEvents(exhibitorId, viewerId);
     return res.status(200).json({ success: true, events });
   } catch (error: any) {
     if (error instanceof Error && error.message.includes("exhibitorId is required")) {

@@ -111,6 +111,10 @@ export class AuthService {
       return null;
     }
 
+    if (!user.isActive) {
+      return null;
+    }
+
     const role = mapUserRoleToAuthRole(user.role);
     const payload: AuthTokenPayload = {
       sub: user.id,
@@ -188,6 +192,9 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
     if (!user) {
       throw new Error("User not found");
+    }
+    if (!user.isActive) {
+      throw new Error("Account is deactivated");
     }
 
     const role = mapUserRoleToAuthRole(user.role);

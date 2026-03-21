@@ -1,10 +1,16 @@
 import prisma from "../../config/prisma";
+import type { Prisma } from "@prisma/client";
+import {
+  activePublicProfileUserWhere,
+  canUserViewOwnPrivateProfile,
+  publicPublishedEventWhere,
+} from "../../utils/public-profile";
 
 // ---------- List organizers ----------
 
 export async function listOrganizers() {
   const organizers = await prisma.user.findMany({
-    where: { role: "ORGANIZER" },
+    where: { role: "ORGANIZER", ...activePublicProfileUserWhere() },
     select: {
       id: true,
       firstName: true,
@@ -25,6 +31,7 @@ export async function listOrganizers() {
       specialties: true,
       isVerified: true,
       isActive: true,
+      profileVisibility: true,
       createdAt: true,
       updatedAt: true,
       organizedEvents: {
@@ -94,7 +101,7 @@ export async function listOrganizers() {
 
 // ---------- Single organizer ----------
 
-export async function getOrganizerById(id: string) {
+export async function getOrganizerById(id: string, viewerUserId?: string | null) {
   const organizer = await prisma.user.findFirst({
     where: {
       id,
@@ -129,6 +136,8 @@ export async function getOrganizerById(id: string) {
       totalAttendees: true,
       totalRevenue: true,
       createdAt: true,
+      isActive: true,
+      profileVisibility: true,
       _count: {
         select: {
           organizedEvents: {
@@ -142,6 +151,13 @@ export async function getOrganizerById(id: string) {
   });
 
   if (!organizer) {
+    return null;
+  }
+
+  if (
+    !canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id) &&
+    (!organizer.isActive || organizer.profileVisibility === "private")
+  ) {
     return null;
   }
 
@@ -579,12 +595,39 @@ const eventStatusMap: Record<string, string> = {
   COMPLETED: "Approved",
 };
 
-export async function listOrganizerEvents(organizerId: string, page = 1, limit = 50) {
+export async function listOrganizerEvents(organizerId: string, page = 1, limit = 50, viewerUserId?: string | null) {
   const skip = (page - 1) * limit;
+
+  const org = await prisma.user.findFirst({
+    where: { id: organizerId, role: "ORGANIZER" },
+    select: { id: true, isActive: true, profileVisibility: true },
+  });
+  if (!org) {
+    throw new Error("Organizer ID is required");
+  }
+
+  const isOwner = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, organizerId);
+  if (!isOwner && (!org.isActive || org.profileVisibility === "private")) {
+    return {
+      events: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    };
+  }
+
+  const eventWhere: Prisma.EventWhereInput = isOwner
+    ? { organizerId }
+    : { AND: [{ organizerId }, publicPublishedEventWhere()] };
 
   const [events, total] = await Promise.all([
     prisma.event.findMany({
-      where: { organizerId },
+      where: eventWhere,
       include: {
         organizer: {
           select: {
@@ -623,7 +666,7 @@ export async function listOrganizerEvents(organizerId: string, page = 1, limit =
       skip,
       take: limit,
     }),
-    prisma.event.count({ where: { organizerId } }),
+    prisma.event.count({ where: eventWhere }),
   ]);
 
   const transformed = events.map((event: any) => {
@@ -671,7 +714,7 @@ export async function listOrganizerEvents(organizerId: string, page = 1, limit =
       organizer: {
         id: event.organizer.id,
         name: `${event.organizer.firstName} ${event.organizer.lastName}`.trim(),
-        email: event.organizer.email,
+        email: isOwner ? event.organizer.email : "",
         avatar: event.organizer.avatar,
       },
       createdAt: event.createdAt.toISOString(),

@@ -24,15 +24,15 @@ router.get("/exhibitors", getExhibitorsHandler);
 // Create exhibitor (for Add Exhibitor flow)
 router.post("/exhibitors", createExhibitorHandler);
 
-// Single exhibitor (GET + PUT for profile)
-router.get("/exhibitors/:id", getExhibitorHandler);
+// Single exhibitor (GET + PUT for profile); optional JWT to view own private profile
+router.get("/exhibitors/:id", optionalUser, getExhibitorHandler);
 router.put("/exhibitors/:id", updateExhibitorHandler);
 
 // Exhibitor analytics
 router.get("/exhibitors/:id/analytics", getExhibitorAnalyticsHandler);
 
 // Exhibitor events
-router.get("/exhibitors/:exhibitorId/events", getExhibitorEventsHandler);
+router.get("/exhibitors/:exhibitorId/events", optionalUser, getExhibitorEventsHandler);
 
 // Exhibitor leads count (follow + connect, for overview card)
 router.get("/exhibitors/:id/leads-count", getExhibitorLeadsCountHandler);

@@ -39,7 +39,8 @@ export async function getVenueEventsHandler(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "Invalid venue ID" });
     }
 
-    const result = await getVenueEvents(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const result = await getVenueEvents(id, viewerId);
     return res.json(result);
   } catch (error: any) {
     if (error instanceof Error && error.message.includes("Invalid venue ID")) {

@@ -6,6 +6,8 @@ import prisma from "../config/prisma";
 declare module "express-serve-static-core" {
   interface Request {
     auth?: AuthTokenPayload;
+    /** Set by optionalUser when a Bearer token was sent but verification failed (expired/invalid). */
+    hadInvalidAuthToken?: boolean;
   }
 }
 
@@ -43,8 +45,21 @@ export function optionalUser(req: Request, _res: Response, next: NextFunction) {
     }
     return next();
   } catch {
+    // Caller sent a Bearer token but it was invalid/expired — downstream can return 401 so clients refresh.
+    req.hadInvalidAuthToken = true;
     return next();
   }
+}
+
+/** End-user app (organizer, speaker, etc.) — rejects admin JWTs. */
+export function requireUserApp(req: Request, res: Response, next: NextFunction) {
+  if (!req.auth) {
+    return res.status(401).json({ message: "Authorization required" });
+  }
+  if (req.auth.domain !== "USER") {
+    return res.status(403).json({ message: "User account required" });
+  }
+  return next();
 }
 
 export function requireUser(req: Request, res: Response, next: NextFunction) {

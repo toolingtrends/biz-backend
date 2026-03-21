@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import routes from "./routes";
 import { errorHandler } from "./middleware/error.middleware";
 import { validateEnv } from "./config/env";
+import { startDeactivationScheduler } from "./jobs/deactivation-scheduler";
 
 validateEnv();
 
@@ -53,5 +54,6 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`Backend server listening on port ${PORT}`);
+  startDeactivationScheduler();
 });
 

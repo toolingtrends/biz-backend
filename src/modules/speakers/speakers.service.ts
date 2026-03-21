@@ -1,4 +1,10 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import {
+  activePublicProfileUserWhere,
+  canUserViewOwnPrivateProfile,
+  publicPublishedEventWhere,
+} from "../../utils/public-profile";
 
 // List speakers
 export async function listSpeakers() {
@@ -7,6 +13,7 @@ export async function listSpeakers() {
   const speakers = await prisma.user.findMany({
     where: {
       role: "SPEAKER",
+      ...activePublicProfileUserWhere(),
     },
     select: {
       id: true,
@@ -47,13 +54,15 @@ export async function listSpeakers() {
 }
 
 // Single speaker profile
-export async function getSpeakerById(id: string) {
+export async function getSpeakerById(id: string, viewerUserId?: string | null) {
   await prisma.$connect();
 
-  const speaker = await prisma.user.findUnique({
+  const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id);
+  const speaker = await prisma.user.findFirst({
     where: {
       id,
       role: "SPEAKER",
+      ...(isSelf ? {} : activePublicProfileUserWhere()),
     },
     select: {
       id: true,
@@ -303,7 +312,7 @@ export async function updateSpeakerProfile(
   if (body.avatar !== undefined) data.avatar = body.avatar;
 
   if (Object.keys(data).length === 0) {
-    return getSpeakerById(id);
+    return getSpeakerById(id, id);
   }
 
   const updated = await prisma.user.update({
@@ -342,13 +351,29 @@ export async function updateSpeakerProfile(
 }
 
 // Speaker events
-export async function getSpeakerEvents(id: string) {
+export async function getSpeakerEvents(id: string, viewerUserId?: string | null) {
   const speakerId = id;
 
   await prisma.$connect();
 
+  const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, speakerId);
+  if (!isSelf) {
+    const visible = await prisma.user.findFirst({
+      where: { id: speakerId, role: "SPEAKER", ...activePublicProfileUserWhere() },
+      select: { id: true },
+    });
+    if (!visible) {
+      return { success: true, upcoming: [], past: [] };
+    }
+  }
+
+  const sessionWhere: Prisma.SpeakerSessionWhereInput = { speakerId };
+  if (!isSelf) {
+    sessionWhere.event = { is: publicPublishedEventWhere() };
+  }
+
   const sessions = await prisma.speakerSession.findMany({
-    where: { speakerId },
+    where: sessionWhere,
     include: {
       event: {
         select: {

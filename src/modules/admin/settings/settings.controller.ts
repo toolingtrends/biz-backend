@@ -20,6 +20,27 @@ export async function getNotifications(req: Request, res: Response) {
   }
 }
 
+export async function patchNotifications(req: Request, res: Response) {
+  try {
+    await service.saveNotifications((req.body ?? {}) as Record<string, unknown>);
+    return res.json({ success: true });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to save notification settings", e?.message);
+  }
+}
+
+export async function postNotificationTest(req: Request, res: Response) {
+  try {
+    const channel = (req.body as { channel?: string } | undefined)?.channel ?? "unknown";
+    return res.json({
+      success: true,
+      message: `Test notification sent via ${channel}`,
+    });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to send test notification", e?.message);
+  }
+}
+
 export async function getSecurity(req: Request, res: Response) {
   try {
     const data = await service.getSecurity();

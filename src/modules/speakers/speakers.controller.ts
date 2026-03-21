@@ -7,7 +7,7 @@ import {
   updateSpeakerProfile,
   createSpeaker,
 } from "./speakers.service";
-import { requireUser } from "../../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
 export async function getSpeakersHandler(_req: Request, res: Response) {
   try {
@@ -29,7 +29,8 @@ export async function getSpeakersHandler(_req: Request, res: Response) {
 export async function getSpeakerHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const profile = await getSpeakerById(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const profile = await getSpeakerById(id, viewerId);
 
     if (!profile) {
       return res.status(404).json({ success: false, error: "Speaker not found" });
@@ -52,7 +53,8 @@ export async function getSpeakerHandler(req: Request, res: Response) {
 export async function getSpeakerEventsHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const result = await getSpeakerEvents(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const result = await getSpeakerEvents(id, viewerId);
 
     return res.json(result);
   } catch (error: any) {

@@ -1,4 +1,10 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import {
+  activePublicProfileUserWhere,
+  canUserViewOwnPrivateProfile,
+  publicPublishedEventWhere,
+} from "../../utils/public-profile";
 
 export interface ListVenuesParams {
   search?: string;
@@ -11,7 +17,7 @@ export async function listVenues(params: ListVenuesParams) {
   const limit = params.limit && params.limit > 0 ? params.limit : 10;
   const skip = (page - 1) * limit;
 
-  const where: any = { role: "VENUE_MANAGER" };
+  const where: any = { role: "VENUE_MANAGER", ...activePublicProfileUserWhere() };
 
   const search = params.search?.trim() ?? "";
   if (search) {
@@ -96,13 +102,31 @@ export async function listVenues(params: ListVenuesParams) {
   };
 }
 
-export async function getVenueEvents(id: string) {
+export async function getVenueEvents(id: string, viewerUserId?: string | null) {
   if (!id) {
     throw new Error("Invalid venue ID");
   }
 
+  const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id);
+  if (!isSelf) {
+    const visible = await prisma.user.findFirst({
+      where: { id, role: "VENUE_MANAGER", ...activePublicProfileUserWhere() },
+      select: { id: true },
+    });
+    if (!visible) {
+      return {
+        success: true,
+        events: [],
+      };
+    }
+  }
+
+  const eventWhere: Prisma.EventWhereInput = isSelf
+    ? { venueId: id }
+    : { AND: [{ venueId: id }, publicPublishedEventWhere()] };
+
   const events = await prisma.event.findMany({
-    where: { venueId: id },
+    where: eventWhere,
     include: {
       organizer: {
         select: {

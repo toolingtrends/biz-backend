@@ -1,6 +1,7 @@
 import { Request, Response, Router } from "express";
 import prisma from "../config/prisma";
-import { requireUser } from "../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../middleware/auth.middleware";
+import { canUserViewOwnPrivateProfile, activePublicProfileUserWhere } from "../utils/public-profile";
 
 const router = Router();
 
@@ -58,7 +59,7 @@ router.get("/users/search", async (req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
       where: {
-        isActive: true,
+        ...activePublicProfileUserWhere(),
         OR: [
           { firstName: { contains: q, mode: "insensitive" } },
           { lastName: { contains: q, mode: "insensitive" } },
@@ -97,8 +98,9 @@ router.get("/users/search", async (req: Request, res: Response) => {
 /**
  * GET /api/users/:id
  * Public user profile by id (used by dashboards).
+ * Private profiles return 404 unless the viewer is the same user (send Bearer token).
  */
-router.get("/users/:id", async (req: Request, res: Response) => {
+router.get("/users/:id", optionalUser, async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!id) {
     return res
@@ -107,6 +109,8 @@ router.get("/users/:id", async (req: Request, res: Response) => {
   }
 
   try {
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -131,6 +135,8 @@ router.get("/users/:id", async (req: Request, res: Response) => {
         lastLogin: true,
         createdAt: true,
         updatedAt: true,
+        isActive: true,
+        profileVisibility: true,
       },
     });
 
@@ -140,7 +146,17 @@ router.get("/users/:id", async (req: Request, res: Response) => {
         .json({ success: false, error: "User not found" });
     }
 
-    const userData = serializeUser(user);
+    if (
+      !canUserViewOwnPrivateProfile(viewerId, id) &&
+      (!user.isActive || user.profileVisibility === "private")
+    ) {
+      return res
+        .status(404)
+        .json({ success: false, error: "User not found" });
+    }
+
+    const { isActive: _ia, profileVisibility: _pv, ...publicUser } = user;
+    const userData = serializeUser(publicUser);
 
     // Keep legacy { user } shape for frontend compatibility, but also expose
     // { success, data } for new consumers.

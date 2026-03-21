@@ -1,11 +1,17 @@
 import prisma from "../../config/prisma";
+import type { Prisma } from "@prisma/client";
+import {
+  activePublicProfileUserWhere,
+  canUserViewOwnPrivateProfile,
+  publicPublishedEventWhere,
+} from "../../utils/public-profile";
 
 // List exhibitors (read-only)
 export async function listExhibitors() {
   const exhibitors = await prisma.user.findMany({
     where: {
       role: "EXHIBITOR",
-      isActive: true,
+      ...activePublicProfileUserWhere(),
     },
     select: {
       id: true,
@@ -156,7 +162,7 @@ export async function updateExhibitorProfile(
   if (body.businessAddress !== undefined) data.businessAddress = body.businessAddress === "" ? null : (body.businessAddress as string);
 
   if (Object.keys(data).length === 0) {
-    return getExhibitorById(id);
+    return getExhibitorById(id, id);
   }
 
   await prisma.user.update({
@@ -164,19 +170,21 @@ export async function updateExhibitorProfile(
     data: data as any,
   });
 
-  return getExhibitorById(id);
+  return getExhibitorById(id, id);
 }
 
 // Single exhibitor (read-only) – shape for public exhibitor page
-export async function getExhibitorById(id: string) {
+export async function getExhibitorById(id: string, viewerUserId?: string | null) {
   if (!id || id === "undefined") {
     throw new Error("Invalid exhibitor ID");
   }
 
+  const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id);
   const user = await prisma.user.findFirst({
     where: {
       id,
       role: "EXHIBITOR",
+      ...(isSelf ? {} : activePublicProfileUserWhere()),
     },
     select: {
       id: true,
@@ -385,13 +393,37 @@ export async function getExhibitorAnalytics(_id: string) {
 }
 
 // Exhibitor events (read-only)
-export async function getExhibitorEvents(exhibitorId: string) {
+export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: string | null) {
   if (!exhibitorId) {
     throw new Error("exhibitorId is required");
   }
 
+  const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, exhibitorId);
+  const exists = await prisma.user.findFirst({
+    where: { id: exhibitorId, role: "EXHIBITOR" },
+    select: { id: true },
+  });
+  if (!exists) {
+    throw new Error("exhibitorId is required");
+  }
+
+  if (!isSelf) {
+    const visible = await prisma.user.findFirst({
+      where: { id: exhibitorId, role: "EXHIBITOR", ...activePublicProfileUserWhere() },
+      select: { id: true },
+    });
+    if (!visible) {
+      return [];
+    }
+  }
+
+  const boothWhere: Prisma.ExhibitorBoothWhereInput = { exhibitorId };
+  if (!isSelf) {
+    boothWhere.event = { is: publicPublishedEventWhere() };
+  }
+
   const booths = await prisma.exhibitorBooth.findMany({
-    where: { exhibitorId },
+    where: boothWhere,
     include: {
       event: {
         select: {

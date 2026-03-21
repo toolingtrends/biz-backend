@@ -107,7 +107,8 @@ export async function getEventByIdHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
 
-    const event = await getEventByIdentifier(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const event = await getEventByIdentifier(id, viewerId);
     if (!event) {
       return res.status(404).json({ error: "Event not found" });
     }

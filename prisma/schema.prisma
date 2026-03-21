@@ -30,6 +30,14 @@ enum UserRole {
   VENUE_MANAGER
 }
 
+enum AccountDeactivationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
 enum EventStatus {
   DRAFT
   PENDING_APPROVAL
@@ -194,9 +202,12 @@ model Otp {
   email     String
   otp       String
   expiresAt DateTime
+  /// When set, OTP is for email change / verification for this user (not signup).
+  userId    String?  @db.Uuid
   createdAt DateTime @default(now())
 
   @@index([email])
+  @@index([userId])
   @@map("otps")
 }
 
@@ -241,6 +252,14 @@ model User {
   timezone        String?
   language        String   @default("en")
   interests       String[] @default([])
+
+  /// Privacy & notification preferences (dashboard Settings)
+  profileVisibility  String  @default("public") // "public" | "private"
+  introduceMe        Boolean @default(true)
+  emailNotifications Boolean @default(true)
+  eventReminders       Boolean @default(true)
+  newMessages          Boolean @default(true)
+  connectionRequests   Boolean @default(true)
 
   organizationName String?
   description      String?
@@ -341,7 +360,30 @@ model User {
   messagesSent             Message[]
   conversationSummaries    ConversationSummary[]
 
+  accountDeactivationRequests AccountDeactivationRequest[]
+
   @@map("users")
+}
+
+model AccountDeactivationRequest {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  userId                String                    @db.Uuid
+  user                  User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status                AccountDeactivationStatus @default(PENDING)
+  requestedAt           DateTime                  @default(now())
+  reviewedAt            DateTime?
+  /// Super admin or sub-admin id who reviewed
+  reviewedByAdminId     String?                   @db.Uuid
+  reviewedByAdminType   String?
+  /// After this instant the user account is set inactive (approval date + 30 days)
+  deactivateEffectiveAt DateTime?
+  rejectReason          String?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("account_deactivation_requests")
 }
 
 // ─── Event Categories (admin) ─────────────────────────────────────────────────

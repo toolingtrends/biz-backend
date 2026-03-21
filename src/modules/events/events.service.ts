@@ -1,4 +1,11 @@
+import type { Prisma } from "@prisma/client";
 import prisma from "../../config/prisma";
+import {
+  publicPublishedEventWhere,
+  activePublicProfileUserWhere,
+  canBypassEventPrivacy,
+  isEventPubliclyVisible,
+} from "../../utils/public-profile";
 
 const statusMap: Record<string, string> = {
   PUBLISHED: "Approved",
@@ -28,57 +35,60 @@ export async function listEvents(params: ListEventsParams) {
   const limit = params.limit && params.limit > 0 ? params.limit : 12;
   const skip = (page - 1) * limit;
 
-  const where: any = {
-    status: "PUBLISHED",
-    isPublic: true,
-  };
+  const andParts: Prisma.EventWhereInput[] = [publicPublishedEventWhere()];
 
   if (params.category) {
-    where.category = { has: params.category };
+    andParts.push({ category: { has: params.category } });
   }
 
   const search = params.search?.trim() ?? "";
   if (search) {
-    where.OR = [
-      { title: { contains: search, mode: "insensitive" } },
-      { description: { contains: search, mode: "insensitive" } },
-      { shortDescription: { contains: search, mode: "insensitive" } },
-      { tags: { has: search } },
-    ];
+    andParts.push({
+      OR: [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { shortDescription: { contains: search, mode: "insensitive" } },
+        { tags: { has: search } },
+      ],
+    });
   }
 
   if (params.location) {
     const location = params.location.trim();
     if (location) {
-      where.venue = {
-        OR: [
-          { venueCity: { contains: location, mode: "insensitive" } },
-          { venueState: { contains: location, mode: "insensitive" } },
-          { venueCountry: { contains: location, mode: "insensitive" } },
-        ],
-      };
+      andParts.push({
+        venue: {
+          OR: [
+            { venueCity: { contains: location, mode: "insensitive" } },
+            { venueState: { contains: location, mode: "insensitive" } },
+            { venueCountry: { contains: location, mode: "insensitive" } },
+          ],
+        },
+      });
     }
   }
 
   if (params.startDate) {
-    where.startDate = { gte: new Date(params.startDate) };
+    andParts.push({ startDate: { gte: new Date(params.startDate) } });
   }
 
   if (params.endDate) {
-    where.endDate = { lte: new Date(params.endDate) };
+    andParts.push({ endDate: { lte: new Date(params.endDate) } });
   }
 
   if (params.featured) {
-    where.isFeatured = true;
+    andParts.push({ isFeatured: true });
   }
 
   if (params.verified) {
-    where.isVerified = true;
+    andParts.push({ isVerified: true });
   }
 
   if (params.vip) {
-    where.isVIP = true;
+    andParts.push({ isVIP: true });
   }
+
+  const where: Prisma.EventWhereInput = { AND: andParts };
 
   let orderBy: any = {};
   switch (params.sort) {
@@ -239,7 +249,9 @@ export async function listEvents(params: ListEventsParams) {
 // Featured events
 export async function getFeaturedEvents() {
   return prisma.event.findMany({
-    where: { isFeatured: true },
+    where: {
+      AND: [{ isFeatured: true }, publicPublishedEventWhere()],
+    },
     select: {
       id: true,
       title: true,
@@ -264,7 +276,7 @@ function generateSlug(title: string): string {
     .replace(/-+$/, "");
 }
 
-export async function getEventByIdentifier(id: string) {
+export async function getEventByIdentifier(id: string, viewerUserId?: string | null) {
   if (!id) {
     throw new Error("Invalid event identifier");
   }
@@ -285,6 +297,8 @@ export async function getEventByIdentifier(id: string) {
         averageRating: true,
         totalReviews: true,
         createdAt: true,
+        isActive: true,
+        profileVisibility: true,
       },
     },
     venue: true,
@@ -304,6 +318,8 @@ export async function getEventByIdentifier(id: string) {
             bio: true,
             company: true,
             jobTitle: true,
+            isActive: true,
+            profileVisibility: true,
           },
         },
       },
@@ -334,6 +350,21 @@ export async function getEventByIdentifier(id: string) {
   }
 
   if (!event) {
+    return null;
+  }
+
+  if (
+    !canBypassEventPrivacy(viewerUserId ?? undefined, {
+      organizerId: event.organizerId,
+      venueId: event.venueId,
+    }) &&
+    !isEventPubliclyVisible({
+      organizerId: event.organizerId,
+      venueId: event.venueId,
+      organizer: event.organizer,
+      venue: event.venue,
+    })
+  ) {
     return null;
   }
 
@@ -381,6 +412,17 @@ export async function getEventByIdentifier(id: string) {
     },
   };
 
+  const bypassAgenda = canBypassEventPrivacy(viewerUserId ?? undefined, {
+    organizerId: event.organizerId,
+    venueId: event.venueId,
+  });
+  if (!bypassAgenda && Array.isArray(data.speakerSessions)) {
+    data.speakerSessions = data.speakerSessions.filter((row: any) => {
+      const sp = row?.speaker;
+      return sp && sp.isActive !== false && sp.profileVisibility !== "private";
+    });
+  }
+
   return data;
 }
 
@@ -422,11 +464,7 @@ export async function getCategoryStats() {
     ALL_CATEGORIES.map(async (category) => {
       const count = await prisma.event.count({
         where: {
-          status: "PUBLISHED",
-          isPublic: true,
-          category: {
-            has: category,
-          },
+          AND: [publicPublishedEventWhere(), { category: { has: category } }],
         },
       });
       return { category, count };
@@ -476,14 +514,19 @@ export async function getEventStats(options: EventStatsOptions) {
         const city = cityRow.name;
         const count = await prisma.event.count({
           where: {
-            status: "PUBLISHED",
-            isPublic: true,
-            venue: {
-              venueCity: {
-                contains: city,
-                mode: "insensitive",
+            AND: [
+              publicPublishedEventWhere(),
+              {
+                venue: {
+                  is: {
+                    AND: [
+                      activePublicProfileUserWhere(),
+                      { venueCity: { contains: city, mode: "insensitive" } },
+                    ],
+                  },
+                },
               },
-            },
+            ],
           },
         });
         return { city, count };
@@ -555,8 +598,10 @@ export async function searchEntities(query: string, limit = 5) {
   const [events, venues, speakers] = await Promise.all([
     prisma.event.findMany({
       where: {
-        isPublic: true,
-        title: { contains: trimmed, mode: "insensitive" },
+        AND: [
+          publicPublishedEventWhere(),
+          { title: { contains: trimmed, mode: "insensitive" } },
+        ],
       },
       select: {
         id: true,
@@ -578,8 +623,8 @@ export async function searchEntities(query: string, limit = 5) {
     prisma.user.findMany({
       where: {
         role: "VENUE_MANAGER",
-        isActive: true,
         venueName: { contains: trimmed, mode: "insensitive" },
+        ...activePublicProfileUserWhere(),
       },
       select: {
         id: true,
@@ -593,11 +638,11 @@ export async function searchEntities(query: string, limit = 5) {
     prisma.user.findMany({
       where: {
         role: "SPEAKER",
-        isActive: true,
         OR: [
           { firstName: { contains: trimmed, mode: "insensitive" } },
           { lastName: { contains: trimmed, mode: "insensitive" } },
         ],
+        ...activePublicProfileUserWhere(),
       },
       select: {
         id: true,

@@ -43,9 +43,20 @@ export async function getOrganizersHandler(_req: Request, res: Response) {
 export async function getOrganizerHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const organizer = await getOrganizerById(id);
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    const organizer = await getOrganizerById(id, viewerId);
 
     if (!organizer) {
+      // Expired JWT + private/inactive profile looks like 404; apiFetch only retries on 401.
+      if (req.hadInvalidAuthToken) {
+        const row = await prisma.user.findFirst({
+          where: { id, role: "ORGANIZER" },
+          select: { profileVisibility: true, isActive: true },
+        });
+        if (row && (!row.isActive || row.profileVisibility === "private")) {
+          return res.status(401).json({ message: "Invalid or expired token" });
+        }
+      }
       return res.status(404).json({ error: "Organizer not found" });
     }
 
@@ -122,8 +133,24 @@ export async function getOrganizerEventsHandler(req: Request, res: Response) {
     const { id } = req.params;
     const page = req.query.page ? parseInt(req.query.page as string, 10) : 1;
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
 
-    const result = await listOrganizerEvents(id, page, limit);
+    const result = await listOrganizerEvents(id, page, limit, viewerId);
+
+    // Same as getOrganizer: owner with expired token would get an empty list without a chance to refresh.
+    if (
+      req.hadInvalidAuthToken &&
+      result.events.length === 0 &&
+      result.pagination.total === 0
+    ) {
+      const row = await prisma.user.findFirst({
+        where: { id, role: "ORGANIZER" },
+        select: { profileVisibility: true, isActive: true },
+      });
+      if (row && (!row.isActive || row.profileVisibility === "private")) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+      }
+    }
 
     return res.json({
       success: true,

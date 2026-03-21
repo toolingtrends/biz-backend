@@ -23,15 +23,15 @@ import {
   updateOrganizerProfileHandler,
   getOrganizerConnectionsHandler,
 } from "./organizers.controller";
-import { requireUser } from "../../middleware/auth.middleware";
+import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
 const router = Router();
 
 // List organizers
 router.get("/organizers", getOrganizersHandler);
 
-// Single organizer details
-router.get("/organizers/:id", getOrganizerHandler);
+// Single organizer details (optional JWT so the organizer can view their own private profile)
+router.get("/organizers/:id", optionalUser, getOrganizerHandler);
 
 // Organizer updates their own profile
 router.patch("/organizers/:id", requireUser, updateOrganizerProfileHandler);
@@ -42,8 +42,8 @@ router.get("/organizers/:id/analytics", getOrganizerAnalyticsHandler);
 // Organizer total attendees
 router.get("/organizers/:id/total-attendees", getOrganizerTotalAttendeesHandler);
 
-// Organizer events list (all statuses, for "my events")
-router.get("/organizers/:id/events", getOrganizerEventsHandler);
+// Organizer events (owner sees all; public sees only site-visible events)
+router.get("/organizers/:id/events", optionalUser, getOrganizerEventsHandler);
 
 // Organizer event create/update/delete
 // NOTE: POST is currently left public so that the Next.js organizer

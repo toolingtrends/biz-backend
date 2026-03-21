@@ -25,6 +25,7 @@ import locationRouter from "../modules/location/location.routes";
 import marketingPublicRouter from "../modules/admin/marketing/marketing-public.routes";
 import promotionPackagesRouter from "../modules/promotion-packages/promotion-packages.routes";
 import eventCategoriesRouter from "../modules/event-categories/event-categories.routes";
+import settingsRouter from "../modules/settings/settings.routes";
 
 const router = Router();
 
@@ -40,6 +41,9 @@ router.get("/health", (_req, res) => {
 
 // Auth-related routes (OTP, login, refresh)
 router.use("/auth", authRouter);
+
+// User dashboard settings (privacy, notifications, email verify, deactivate)
+router.use("/settings", settingsRouter);
 
 // User by id (for Next.js server: visitor dashboard etc.) — secured by INTERNAL_API_SECRET
 router.use("/", userByIdRouter);
