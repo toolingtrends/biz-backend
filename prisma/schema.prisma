@@ -363,6 +363,8 @@ model User {
 
   // Venue appointments (as venue manager)
   venueAppointments VenueAppointment[] @relation("VenueAppointmentVenue")
+  exhibitorSuggestions  ExhibitorSuggestion[] @relation("VisitorSuggestions")
+  visitorSuggestions    ExhibitorSuggestion[] @relation("ExhibitorSuggestions") 
 
   // Venue appointments (as visitor/requester)
   visitorAppointments VenueAppointment[] @relation("VenueAppointmentVisitor")
@@ -1070,7 +1072,25 @@ model Country {
   @@index([isPermitted])
   @@map("countries")
 }
+model ExhibitorSuggestion {
+  id           String   @id @default(uuid()) @db.Uuid
+  visitorId    String   @db.Uuid   // ✅ FIXED
+  exhibitorId  String   @db.Uuid   // ✅ FIXED
+  note         String?
+  status       String   @default("PENDING")
+  sentAt       DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
+  visitor      User     @relation("VisitorSuggestions", fields: [visitorId], references: [id], onDelete: Cascade)
+  exhibitor    User     @relation("ExhibitorSuggestions", fields: [exhibitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, exhibitorId])
+  @@index([visitorId])
+  @@index([exhibitorId])
+  @@index([status])
+  @@map("exhibitor_suggestions")
+}
 model City {
   id            String   @id @default(uuid()) @db.Uuid
   name          String

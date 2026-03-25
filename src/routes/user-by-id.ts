@@ -756,5 +756,422 @@ router.patch("/settings", async (req: Request, res: Response) => {
       .json({ success: false, error: "Internal server error" });
   }
 });
+router.get("/users/:id/suggestions", requireUser, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const auth = req.auth;
+
+  if (!id) {
+    return res.status(400).json({ success: false, error: "User id required" });
+  }
+
+  // Ensure the user can only access their own suggestions
+  if (!auth || auth.sub !== id) {
+    return res.status(403).json({ success: false, error: "Forbidden" });
+  }
+
+  try {
+    const { type = "personalized", limit = "12", search = "" } = req.query;
+    
+    if (type === "trending") {
+      // Get trending exhibitors
+      const trending = await getTrendingExhibitors({
+        limit: parseInt(limit as string, 10),
+        search: search as string
+      });
+      
+      return res.json({ 
+        success: true, 
+        data: trending 
+      });
+    } else {
+      // Get personalized suggestions
+      const visitorContext = await getVisitorContext(id);
+      const suggestions = await getAvailableExhibitorsForSuggestion(
+        id,
+        {
+          limit: parseInt(limit as string, 10),
+          search: search as string
+        }
+      );
+      
+      return res.json({ 
+        success: true, 
+        data: {
+          suggestions,
+          visitorContext
+        }
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching suggestions:", error);
+    return res.status(500).json({ 
+      success: false, 
+      error: "Failed to fetch suggestions" 
+    });
+  }
+});
+
+/**
+ * POST /api/users/:id/connections - Send connection request to exhibitor
+ */
+router.post("/users/:id/connections", requireUser, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const auth = req.auth;
+  const { exhibitorId } = req.body;
+
+  if (!id) {
+    return res.status(400).json({ success: false, error: "User id required" });
+  }
+
+  if (!auth || auth.sub !== id) {
+    return res.status(403).json({ success: false, error: "Forbidden" });
+  }
+
+  if (!exhibitorId) {
+    return res.status(400).json({ success: false, error: "Exhibitor ID required" });
+  }
+
+  try {
+    // Check if connection already exists
+    const existing = await prisma.connection.findFirst({
+      where: {
+        OR: [
+          { requesterId: id, receiverId: exhibitorId },
+          { requesterId: exhibitorId, receiverId: id }
+        ]
+      }
+    });
+
+    if (existing) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Connection request already exists" 
+      });
+    }
+
+    // Create connection request
+    const connection = await prisma.connection.create({
+      data: {
+        requesterId: id,
+        receiverId: exhibitorId,
+        status: "PENDING"
+      }
+    });
+
+    // Also update or create exhibitor suggestion record
+    await prisma.exhibitorSuggestion.upsert({
+      where: {
+        visitorId_exhibitorId: {
+          visitorId: id,
+          exhibitorId: exhibitorId
+        }
+      },
+      update: { status: "CONNECTED" },
+      create: {
+        visitorId: id,
+        exhibitorId: exhibitorId,
+        status: "CONNECTED",
+        sentAt: new Date()
+      }
+    });
+
+    return res.json({ 
+      success: true, 
+      message: "Connection request sent successfully",
+      data: connection
+    });
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    return res.status(500).json({ 
+      success: false, 
+      error: "Failed to send connection request" 
+    });
+  }
+});
+
+// Helper functions for suggestions
+async function getVisitorContext(visitorId: string) {
+  const visitor = await prisma.user.findUnique({
+    where: { id: visitorId, role: "ATTENDEE" },
+    select: {
+      interests: true,
+      companyIndustry: true,
+      registrations: {
+        where: { status: "CONFIRMED" },
+        include: {
+          event: { select: { id: true, category: true } }
+        }
+      },
+      savedEvents: {
+        include: {
+          event: { select: { id: true, category: true } }
+        }
+      },
+      exhibitorSuggestions: {
+        where: { status: "PENDING" },
+        select: { exhibitorId: true }
+      }
+    }
+  });
+
+  if (!visitor) return null;
+
+  // Count unique exhibitors interacted with
+  const interactedExhibitors = await prisma.appointment.count({
+    where: { requesterId: visitorId }
+  });
+
+  // Extract categories from visitor's events and interests
+  const categories = new Set<string>();
+  
+  visitor.registrations?.forEach((registration: any) => {
+    if (registration.event?.category && Array.isArray(registration.event.category)) {
+      registration.event.category.forEach((cat: string) => categories.add(cat));
+    }
+  });
+  
+  visitor.savedEvents?.forEach((savedEvent: any) => {
+    if (savedEvent.event?.category && Array.isArray(savedEvent.event.category)) {
+      savedEvent.event.category.forEach((cat: string) => categories.add(cat));
+    }
+  });
+  
+  visitor.interests?.forEach((interest: string) => categories.add(interest));
+
+  return {
+    interests: visitor.interests || [],
+    industry: visitor.companyIndustry,
+    interactedExhibitorsCount: interactedExhibitors,
+    categories: Array.from(categories),
+    alreadySuggestedIds: visitor.exhibitorSuggestions?.map((s: any) => s.exhibitorId) || []
+  };
+}
+
+async function getAvailableExhibitorsForSuggestion(
+  visitorId: string,
+  filters: { limit?: number; search?: string }
+) {
+  try {
+    const { limit = 20, search } = filters;
+    const visitor = await getVisitorContext(visitorId);
+    
+    if (!visitor) return [];
+
+    // Build where clause for exhibitors
+    const where: any = {
+      role: "EXHIBITOR",
+      isActive: true,
+    };
+
+    // Exclude already suggested exhibitors
+    if (visitor.alreadySuggestedIds.length > 0) {
+      where.id = { notIn: visitor.alreadySuggestedIds };
+    }
+
+    // Filter by visitor's categories
+    if (visitor.categories.length > 0) {
+      where.exhibitorBooths = {
+        some: {
+          event: {
+            category: { hasSome: visitor.categories }
+          }
+        }
+      };
+    }
+
+    // Apply search filter
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { company: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Fetch exhibitors
+    const exhibitors = await prisma.user.findMany({
+      where,
+      take: limit,
+      orderBy: [{ createdAt: "desc" }],
+      include: {
+        exhibitorBooths: {
+          where: {
+            event: {
+              status: "PUBLISHED",
+              startDate: { gte: new Date() }
+            }
+          },
+          include: {
+            event: {
+              select: {
+                id: true,
+                title: true,
+                startDate: true,
+                endDate: true,
+                category: true,
+              }
+            }
+          },
+          take: 3
+        },
+        appointmentsAsExhibitor: {
+          where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+          select: { id: true }
+        },
+        followersAsFollowed: {
+          select: { id: true }
+        }
+      }
+    });
+
+    // Calculate match score based on categories
+    const formattedExhibitors = exhibitors.map(exhibitor => {
+      const exhibitorCategories = new Set<string>();
+      exhibitor.exhibitorBooths?.forEach((booth: any) => {
+        if (booth.event?.category && Array.isArray(booth.event.category)) {
+          booth.event.category.forEach((cat: string) => exhibitorCategories.add(cat));
+        }
+      });
+      
+      const matchingCategories = visitor.categories.filter(cat => 
+        Array.from(exhibitorCategories).some(exCat => 
+          exCat.toLowerCase().includes(cat.toLowerCase()) || 
+          cat.toLowerCase().includes(exCat.toLowerCase())
+        )
+      );
+      
+      const matchScore = matchingCategories.length;
+      
+      return {
+        id: exhibitor.id,
+        name: `${exhibitor.firstName || ""} ${exhibitor.lastName || ""}`.trim() || exhibitor.company || "Exhibitor",
+        company: exhibitor.company,
+        industry: exhibitor.companyIndustry,
+        description: exhibitor.description,
+        avatar: exhibitor.avatar,
+        website: exhibitor.website,
+        linkedin: exhibitor.linkedin,
+        location: exhibitor.location,
+        bio: exhibitor.bio,
+        stats: {
+          totalMeetings: exhibitor.appointmentsAsExhibitor?.length || 0,
+          followers: exhibitor.followersAsFollowed?.length || 0,
+          products: 0,
+          upcomingEvents: exhibitor.exhibitorBooths?.length || 0,
+        },
+        upcomingEvents: exhibitor.exhibitorBooths?.map((booth: any) => ({
+          id: booth.event.id,
+          title: booth.event.title,
+          startDate: booth.event.startDate,
+        })) || [],
+        relevanceScore: matchScore,
+      };
+    }).sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    return formattedExhibitors;
+  } catch (error) {
+    console.error("Error in getAvailableExhibitorsForSuggestion:", error);
+    throw error;
+  }
+}
+
+async function getTrendingExhibitors(filters: { 
+  limit?: number; 
+  search?: string;
+}) {
+  try {
+    const { limit = 20, search } = filters;
+    
+    const where: any = {
+      role: "EXHIBITOR",
+      isActive: true,
+    };
+
+    if (search) {
+      where.OR = [
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { company: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const exhibitors = await prisma.user.findMany({
+      where,
+      take: limit,
+      include: {
+        appointmentsAsExhibitor: {
+          where: { status: { in: ["CONFIRMED", "COMPLETED"] } },
+          select: { id: true }
+        },
+        followersAsFollowed: {
+          select: { id: true }
+        },
+        exhibitorBooths: {
+          where: {
+            event: {
+              status: "PUBLISHED",
+              startDate: { gte: new Date() }
+            }
+          },
+          include: {
+            event: {
+              select: {
+                id: true,
+                title: true,
+                startDate: true,
+                endDate: true,
+                category: true,
+              }
+            }
+          },
+          take: 3
+        }
+      },
+      orderBy: [
+        { createdAt: "desc" }
+      ]
+    });
+
+    // Calculate trending score based on engagement
+    const formattedExhibitors = exhibitors.map(exhibitor => {
+      const meetingCount = exhibitor.appointmentsAsExhibitor?.length || 0;
+      const followerCount = exhibitor.followersAsFollowed?.length || 0;
+      const upcomingEvents = exhibitor.exhibitorBooths?.length || 0;
+      
+      const trendingScore = (meetingCount * 3) + (followerCount * 1) + (upcomingEvents * 2);
+      
+      return {
+        id: exhibitor.id,
+        name: `${exhibitor.firstName || ""} ${exhibitor.lastName || ""}`.trim() || exhibitor.company || "Exhibitor",
+        company: exhibitor.company,
+        industry: exhibitor.companyIndustry,
+        description: exhibitor.description,
+        avatar: exhibitor.avatar,
+        website: exhibitor.website,
+        linkedin: exhibitor.linkedin,
+        location: exhibitor.location,
+        bio: exhibitor.bio,
+        stats: {
+          totalMeetings: meetingCount,
+          followers: followerCount,
+          products: 0,
+          upcomingEvents: upcomingEvents,
+        },
+        upcomingEvents: exhibitor.exhibitorBooths?.map((booth: any) => ({
+          id: booth.event.id,
+          title: booth.event.title,
+          startDate: booth.event.startDate,
+        })) || [],
+        relevanceScore: trendingScore,
+      };
+    }).sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+    return formattedExhibitors;
+  } catch (error) {
+    console.error("Error in getTrendingExhibitors:", error);
+    throw error;
+  }
+}
 
 export default router;
