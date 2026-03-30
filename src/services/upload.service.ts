@@ -7,11 +7,15 @@ export interface UploadResult {
   publicId: string;
 }
 
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB (align with organizer dashboard)
 const MAX_DOCUMENT_SIZE_BYTES = 15 * 1024 * 1024; // 15MB
 
-const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
-const ALLOWED_DOCUMENT_MIME_TYPES = new Set(["application/pdf"]);
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 const MAX_MATERIAL_SIZE_BYTES = 20 * 1024 * 1024; // 20MB for presentation materials
 const ALLOWED_MATERIAL_MIME_TYPES = new Set([
   "application/pdf",
