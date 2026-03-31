@@ -9,9 +9,11 @@ import {
 } from "./speakers.service";
 import { requireUser, optionalUser } from "../../middleware/auth.middleware";
 
-export async function getSpeakersHandler(_req: Request, res: Response) {
+export async function getSpeakersHandler(req: Request, res: Response) {
   try {
-    const speakers = await listSpeakers();
+    const requireProfileImage =
+      req.query.requireProfileImage === "1" || req.query.requireProfileImage === "true";
+    const speakers = await listSpeakers({ requireProfileImage });
     return res.json({
       success: true,
       speakers,

@@ -5,9 +5,12 @@ import {
   canUserViewOwnPrivateProfile,
   publicPublishedEventWhere,
 } from "../../utils/public-profile";
+import { hasPublicProfileImage } from "../../utils/profile-image";
 
 // List speakers
-export async function listSpeakers() {
+export async function listSpeakers(options?: { requireProfileImage?: boolean }) {
+  const requireProfileImage = options?.requireProfileImage ?? false;
+
   await prisma.$connect();
 
   const speakers = await prisma.user.findMany({
@@ -45,7 +48,11 @@ export async function listSpeakers() {
     },
   });
 
-  return speakers.map((s) => ({
+  const filtered = requireProfileImage
+    ? speakers.filter((s) => hasPublicProfileImage(s.avatar))
+    : speakers;
+
+  return filtered.map((s) => ({
     ...s,
     specialties: Array.isArray(s.specialties) ? s.specialties : [],
     achievements: Array.isArray(s.achievements) ? s.achievements : [],

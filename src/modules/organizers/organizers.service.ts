@@ -5,10 +5,13 @@ import {
   canUserViewOwnPrivateProfile,
   publicPublishedEventWhere,
 } from "../../utils/public-profile";
+import { hasPublicProfileImage } from "../../utils/profile-image";
 
 // ---------- List organizers ----------
 
-export async function listOrganizers() {
+export async function listOrganizers(options?: { requireProfileImage?: boolean }) {
+  const requireProfileImage = options?.requireProfileImage ?? false;
+
   const organizers = await prisma.user.findMany({
     where: { role: "ORGANIZER", ...activePublicProfileUserWhere() },
     select: {
@@ -41,8 +44,12 @@ export async function listOrganizers() {
     },
   });
 
+  const rows = requireProfileImage
+    ? organizers.filter((o) => hasPublicProfileImage(o.avatar))
+    : organizers;
+
   const organizersWithStats = await Promise.all(
-    organizers.map(async (organizer) => {
+    rows.map(async (organizer) => {
       const eventIds = organizer.organizedEvents.map((e) => e.id);
 
       const attendeeCount = await prisma.eventRegistration.count({
@@ -69,7 +76,9 @@ export async function listOrganizers() {
         id: organizer.id,
         name: organizer.organizationName || `${organizer.firstName} ${organizer.lastName}`,
         company: organizer.organizationName || "",
-        image: organizer.avatar || "/placeholder.svg?height=100&width=100&text=Org",
+        image: requireProfileImage
+          ? organizer.avatar ?? ""
+          : organizer.avatar || "/placeholder.svg?height=100&width=100&text=Org",
         avgRating: organizer.averageRating || 0,
         totalReviews: organizer.totalReviews || 0,
         headquarters: organizer.headquarters || organizer.location || "Not specified",

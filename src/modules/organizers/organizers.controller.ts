@@ -23,9 +23,11 @@ import prisma from "../../config/prisma";
 import { updateEventByOrganizer, deleteEventByOrganizer } from "../events/events.service";
 import { createEventAdmin } from "../events/events-writes.service";
 
-export async function getOrganizersHandler(_req: Request, res: Response) {
+export async function getOrganizersHandler(req: Request, res: Response) {
   try {
-    const organizers = await listOrganizers();
+    const requireProfileImage =
+      req.query.requireProfileImage === "1" || req.query.requireProfileImage === "true";
+    const organizers = await listOrganizers({ requireProfileImage });
     return res.json({
       organizers,
       total: organizers.length,
