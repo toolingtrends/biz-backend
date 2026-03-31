@@ -174,6 +174,8 @@ export async function adminListEvents(params: AdminListEventsParams) {
     title: event.title,
     description: event.description,
     shortDescription: event.shortDescription,
+    subTitle: event.shortDescription,
+    edition: event.edition ?? null,
     startDate: event.startDate.toISOString(),
     endDate: event.endDate.toISOString(),
     registrationStart: event.registrationStart.toISOString(),
@@ -275,7 +277,12 @@ export async function adminGetEventById(id: string) {
     },
   });
 
-  return event;
+  if (!event) return null;
+  return {
+    ...event,
+    subTitle: event.shortDescription,
+    edition: event.edition ?? null,
+  } as any;
 }
 
 export async function adminUpdateEvent(
@@ -296,6 +303,7 @@ export async function adminUpdateEvent(
     "title",
     "description",
     "shortDescription",
+    "subTitle",
     "slug",
     "edition",
     "status",
@@ -336,6 +344,9 @@ export async function adminUpdateEvent(
       raw[key] = data[key];
     }
   }
+  if (raw.shortDescription === undefined && raw.subTitle !== undefined) {
+    raw.shortDescription = raw.subTitle;
+  }
 
   // Map frontend status labels to Prisma EventStatus enum (so "Approved" -> PUBLISHED, etc.)
   if (raw.status !== undefined && typeof raw.status === "string") {
@@ -369,12 +380,16 @@ export async function adminUpdateEvent(
   };
 
   const updateData: Record<string, unknown> = { ...raw };
+  delete (updateData as any).subTitle;
   if (raw.category !== undefined) updateData.category = toStrArray(raw.category);
   if (raw.tags !== undefined) updateData.tags = toStrArray(raw.tags);
   if (raw.eventType !== undefined) updateData.eventType = toStrArray(raw.eventType);
   if (raw.images !== undefined) updateData.images = toStrArray(raw.images);
   if (raw.videos !== undefined) updateData.videos = toStrArray(raw.videos);
   if (raw.documents !== undefined) updateData.documents = toStrArray(raw.documents);
+  if (raw.edition !== undefined && raw.edition !== null) {
+    updateData.edition = String(raw.edition);
+  }
 
   // Prisma Int fields — only set when valid so we don't overwrite with undefined
   if (raw.maxAttendees !== undefined && raw.maxAttendees !== null) {
@@ -405,6 +420,21 @@ export async function adminUpdateEvent(
     updateData.verifiedAt = null;
     updateData.verifiedBy = null;
     updateData.verifiedBadgeImage = null;
+  }
+
+  const ticketTypesPayload = Array.isArray((data as any).ticketTypes)
+    ? ((data as any).ticketTypes as any[])
+    : [];
+  if (ticketTypesPayload.length > 0) {
+    await prisma.ticketType.deleteMany({ where: { eventId: id } });
+    const normalized = ticketTypesPayload.map((t, i) => ({
+      name: String(t?.name ?? `Ticket ${i + 1}`),
+      description: String(t?.description ?? ""),
+      price: Number(t?.price ?? 0),
+      quantity: Number(t?.quantity ?? 100),
+      isActive: t?.isActive !== false,
+    }));
+    (updateData as any).ticketTypes = { create: normalized };
   }
 
   const event = await prisma.event.update({

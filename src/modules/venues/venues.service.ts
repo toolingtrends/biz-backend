@@ -10,14 +10,19 @@ export interface ListVenuesParams {
   search?: string;
   page?: number;
   limit?: number;
+  requireVenueImage?: boolean;
 }
 
 export async function listVenues(params: ListVenuesParams) {
   const page = params.page && params.page > 0 ? params.page : 1;
   const limit = params.limit && params.limit > 0 ? params.limit : 10;
   const skip = (page - 1) * limit;
+  const requireVenueImage = params.requireVenueImage === true;
 
   const where: any = { role: "VENUE_MANAGER", ...activePublicProfileUserWhere() };
+  if (requireVenueImage) {
+    where.venueImages = { isEmpty: false };
+  }
 
   const search = params.search?.trim() ?? "";
   if (search) {
@@ -66,12 +71,12 @@ export async function listVenues(params: ListVenuesParams) {
     prisma.user.count({ where }),
   ]);
 
-  const transformedVenues = venues.map((v: any) => {
-    const images = Array.isArray(v.venueImages) && v.venueImages.length > 0
-      ? v.venueImages
-      : v.avatar
-        ? [v.avatar]
-        : [];
+  const sourceVenues = requireVenueImage
+    ? venues.filter((v: any) => Array.isArray(v.venueImages) && v.venueImages.length > 0)
+    : venues;
+
+  const transformedVenues = sourceVenues.map((v: any) => {
+    const images = Array.isArray(v.venueImages) ? v.venueImages : [];
     const addressParts = [v.venueAddress, v.venueCity, v.venueState, v.venueCountry].filter(Boolean);
     const address = addressParts.length > 0 ? addressParts.join(", ") : "";
     return {

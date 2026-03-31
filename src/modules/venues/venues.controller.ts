@@ -14,8 +14,10 @@ export async function getVenuesHandler(req: Request, res: Response) {
     const search = (req.query.search as string | undefined) ?? "";
     const page = req.query.page ? Number.parseInt(req.query.page as string, 10) : undefined;
     const limit = req.query.limit ? Number.parseInt(req.query.limit as string, 10) : undefined;
+    const requireVenueImage =
+      req.query.requireVenueImage === "1" || req.query.requireVenueImage === "true";
 
-    const { venues, pagination } = await listVenues({ search, page, limit });
+    const { venues, pagination } = await listVenues({ search, page, limit, requireVenueImage });
 
     return res.json({
       success: true,

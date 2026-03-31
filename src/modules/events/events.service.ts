@@ -184,6 +184,8 @@ export async function listEvents(params: ListEventsParams) {
       title: event.title,
       description: event.description,
       shortDescription: event.shortDescription,
+      subTitle: event.shortDescription,
+      edition: event.edition,
       slug: event.slug,
       startDate: event.startDate.toISOString(),
       endDate: event.endDate.toISOString(),
@@ -396,6 +398,8 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
     ...event,
     title: event.title || "Untitled Event",
     description: event.description || event.shortDescription || "",
+    subTitle: event.shortDescription || null,
+    edition: event.edition || null,
     availableTickets,
     isAvailable: availableTickets > 0 && new Date() < event.registrationEnd,
     registrationCount: event._count?.registrations ?? 0,
@@ -1385,10 +1389,26 @@ export async function updateEventByOrganizer(
   });
   if (!existingEvent) return { error: "NOT_FOUND" as const };
 
+  const resolvedShortDescription = (
+    body.shortDescription ??
+    body.subTitle ??
+    body.eventSubTitle ??
+    body.slug ??
+    existingEvent.shortDescription ??
+    null
+  ) as string | null;
+
   const eventUpdateData: Record<string, unknown> = {
     title: body.title,
     description: body.description,
-    shortDescription: body.shortDescription ?? null,
+    shortDescription:
+      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
+        ? String(resolvedShortDescription).trim()
+        : null,
+    edition:
+      body.edition != null && String(body.edition).trim() !== ""
+        ? String(body.edition).trim()
+        : existingEvent.edition,
     slug:
       (body.slug as string) ??
       (body.title as string)?.toString().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""),
@@ -1422,7 +1442,20 @@ export async function updateEventByOrganizer(
   };
 
   const ticketTypesToCreate: Array<{ name: string; description: string; price: number; quantity: number; isActive: boolean }> = [];
-  if (body.generalPrice || (body.pricing as { general?: number })?.general) {
+
+  if (Array.isArray(body.ticketTypes) && body.ticketTypes.length > 0) {
+    for (const t of body.ticketTypes as any[]) {
+      const price = Number(t?.price ?? 0);
+      const quantity = Number(t?.quantity ?? body.maxAttendees ?? body.capacity ?? 100);
+      ticketTypesToCreate.push({
+        name: String(t?.name ?? "General Admission"),
+        description: String(t?.description ?? ""),
+        price: Number.isFinite(price) ? price : 0,
+        quantity: Number.isFinite(quantity) ? quantity : 100,
+        isActive: t?.isActive !== false,
+      });
+    }
+  } else if (body.generalPrice || (body.pricing as { general?: number })?.general) {
     ticketTypesToCreate.push({
       name: "General Admission",
       description: "General admission ticket",
@@ -1431,7 +1464,7 @@ export async function updateEventByOrganizer(
       isActive: true,
     });
   }
-  if (body.vipPrice) {
+  if (!Array.isArray(body.ticketTypes) && body.vipPrice) {
     ticketTypesToCreate.push({
       name: "VIP",
       description: "VIP ticket with premium access",
@@ -1440,7 +1473,7 @@ export async function updateEventByOrganizer(
       isActive: true,
     });
   }
-  if (body.premiumPrice) {
+  if (!Array.isArray(body.ticketTypes) && body.premiumPrice) {
     ticketTypesToCreate.push({
       name: "Premium",
       description: "Premium ticket with enhanced experience",
@@ -1495,7 +1528,13 @@ export async function updateEventByOrganizer(
     },
   });
 
-  return { event: updatedEvent };
+  return {
+    event: {
+      ...updatedEvent,
+      subTitle: updatedEvent.shortDescription || null,
+      edition: updatedEvent.edition || null,
+    },
+  };
 }
 
 export async function deleteEventByOrganizer(organizerId: string, eventId: string) {

@@ -252,12 +252,25 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "");
 
+  const resolvedShortDescription = (
+    body.shortDescription ??
+    body.subTitle ??
+    body.eventSubTitle ??
+    body.slug ??
+    null
+  ) as string | null;
+
   const eventData: any = {
     id: eventId,
     title: body.title,
     description: body.description,
     shortDescription:
-      body.shortDescription || (body.description ? String(body.description).substring(0, 200) : null),
+      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
+        ? String(resolvedShortDescription).trim()
+        : body.description
+          ? String(body.description).substring(0, 200)
+          : null,
+    edition: body.edition != null && String(body.edition).trim() !== "" ? String(body.edition).trim() : null,
     slug,
     // Admin-created events are always approved (PUBLISHED) so they are not stuck in Drafts
     status: "PUBLISHED" as EventStatus,
@@ -293,39 +306,58 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     organizerId,
   };
 
-  const ticketTypesData: any[] = [
-    {
-      name: "General Admission",
-      description: "General admission ticket",
-      price: body.generalPrice ?? body.ticketPrice ?? 0,
-      quantity: body.maxAttendees ?? body.maxCapacity ?? 100,
-      isActive: true,
-    },
-  ];
-  if (Number(body.studentPrice) > 0) {
+  const capacityBase = Number(body.maxAttendees ?? body.maxCapacity ?? 100) || 100;
+  const normalizeTicket = (t: any, i: number) => {
+    const price = Number(t?.price ?? 0);
+    const quantity = Number(t?.quantity ?? capacityBase);
+    return {
+      name: String(t?.name ?? `Ticket ${i + 1}`),
+      description: String(t?.description ?? ""),
+      price: Number.isFinite(price) ? price : 0,
+      quantity: Number.isFinite(quantity) ? quantity : capacityBase,
+      isActive: t?.isActive !== false,
+    };
+  };
+
+  const providedTicketTypes = Array.isArray(body.ticketTypes)
+    ? body.ticketTypes.map(normalizeTicket).filter((t: any) => t.isActive)
+    : [];
+
+  const ticketTypesData: any[] = providedTicketTypes.length > 0
+    ? providedTicketTypes
+    : [
+        {
+          name: "General Admission",
+          description: "General admission ticket",
+          price: Number(body.generalPrice ?? body.ticketPrice ?? 0),
+          quantity: capacityBase,
+          isActive: true,
+        },
+      ];
+  if (providedTicketTypes.length === 0 && Number(body.studentPrice) > 0) {
     ticketTypesData.push({
       name: "Student",
       description: "Student ticket",
-      price: body.studentPrice,
-      quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.2),
+      price: Number(body.studentPrice),
+      quantity: Math.floor(capacityBase * 0.2),
       isActive: true,
     });
   }
-  if (Number(body.vipPrice) > 0) {
+  if (providedTicketTypes.length === 0 && Number(body.vipPrice) > 0) {
     ticketTypesData.push({
       name: "VIP",
       description: "VIP ticket",
-      price: body.vipPrice,
-      quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.1),
+      price: Number(body.vipPrice),
+      quantity: Math.floor(capacityBase * 0.1),
       isActive: true,
     });
   }
-  if (Number(body.groupPrice) > 0) {
+  if (providedTicketTypes.length === 0 && Number(body.groupPrice) > 0) {
     ticketTypesData.push({
       name: "Group",
       description: "Group ticket",
-      price: body.groupPrice,
-      quantity: Math.floor((body.maxAttendees || body.maxCapacity || 100) * 0.15),
+      price: Number(body.groupPrice),
+      quantity: Math.floor(capacityBase * 0.15),
       isActive: true,
     });
   }
