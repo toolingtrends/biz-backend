@@ -773,6 +773,11 @@ export async function createEventAdminHandler(req: Request, res: Response) {
           error: "organizerId or organizerEmail/organizerName is required",
         });
       }
+      if (result.error === "INVALID_YOUTUBE_URL") {
+        return res.status(400).json({
+          error: (result as { message?: string }).message ?? "Invalid YouTube URL",
+        });
+      }
       return res.status(400).json({ error: "Bad request" });
     }
     return res.status(201).json({

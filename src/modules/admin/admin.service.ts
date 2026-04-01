@@ -1,5 +1,6 @@
 import prisma from "../../config/prisma";
 import { EventStatus } from "@prisma/client";
+import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -197,6 +198,14 @@ export async function adminListEvents(params: AdminListEventsParams) {
     currentAttendees: event.currentAttendees,
     currency: event.currency,
     images: event.images ?? [],
+    videos: event.videos ?? [],
+    documents: event.documents ?? [],
+    brochure: event.brochure ?? null,
+    layoutPlan: event.layoutPlan ?? null,
+    slug: event.slug,
+    tags: event.tags ?? [],
+    eventType: event.eventType ?? [],
+    youtubeVideoUrl: event.youtubeVideoUrl ?? null,
     bannerImage: event.bannerImage,
     thumbnailImage: event.thumbnailImage,
     organizer: event.organizer
@@ -298,6 +307,18 @@ export async function adminUpdateEvent(
     return { error: "NOT_FOUND" as const };
   }
 
+  let youtubeVideoUrlUpdate: string | null | undefined;
+  if (data.youtubeVideoUrl !== undefined) {
+    const normalized = normalizeYoutubeVideoUrlForStorage(data.youtubeVideoUrl);
+    if (!normalized.ok) {
+      return {
+        error: "INVALID_YOUTUBE_URL" as const,
+        message: normalized.message,
+      };
+    }
+    youtubeVideoUrlUpdate = normalized.value;
+  }
+
   // Only these fields can be updated; venue/organizer/location are relations and must not be overwritten
   const allowedFields = [
     "title",
@@ -381,6 +402,9 @@ export async function adminUpdateEvent(
 
   const updateData: Record<string, unknown> = { ...raw };
   delete (updateData as any).subTitle;
+  if (youtubeVideoUrlUpdate !== undefined) {
+    updateData.youtubeVideoUrl = youtubeVideoUrlUpdate;
+  }
   if (raw.category !== undefined) updateData.category = toStrArray(raw.category);
   if (raw.tags !== undefined) updateData.tags = toStrArray(raw.tags);
   if (raw.eventType !== undefined) updateData.eventType = toStrArray(raw.eventType);

@@ -5,6 +5,7 @@
  */
 import { randomUUID } from "crypto";
 import prisma from "../../config/prisma";
+import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import type { EventStatus, SessionType, SessionStatus } from "@prisma/client";
 import type { UserRole } from "@prisma/client";
 
@@ -160,6 +161,15 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     ? body.documents.filter(Boolean)
     : [body.brochure, body.layoutPlan].filter(Boolean);
 
+  let youtubeVideoUrl: string | null = null;
+  if (body.youtubeVideoUrl !== undefined && body.youtubeVideoUrl !== null) {
+    const yt = normalizeYoutubeVideoUrlForStorage(body.youtubeVideoUrl);
+    if (!yt.ok) {
+      return { error: "INVALID_YOUTUBE_URL" as const, message: yt.message };
+    }
+    youtubeVideoUrl = yt.value;
+  }
+
   let organizerId: string;
   if (body.organizerId) {
     organizerId = body.organizerId;
@@ -290,6 +300,7 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     currency: body.currency || "USD",
     images,
     videos,
+    youtubeVideoUrl,
     documents,
     brochure: body.brochure || null,
     layoutPlan: body.layoutPlan || null,

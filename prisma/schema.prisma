@@ -470,6 +470,8 @@ model Event {
 
   images         String[] @default([])
   videos         String[] @default([])
+  /// Single promo / embed URL (normalized to youtube.com/watch?v=…)
+  youtubeVideoUrl String?
   brochure       String?
   layoutPlan     String?
   documents      String[] @default([])

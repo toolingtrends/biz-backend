@@ -224,6 +224,7 @@ export async function listEvents(params: ListEventsParams) {
       images: event.images,
       bannerImage: event.bannerImage,
       thumbnailImage: event.thumbnailImage,
+      youtubeVideoUrl: event.youtubeVideoUrl ?? null,
       organizer: {
         id: event.organizer.id,
         name: `${event.organizer.firstName} ${event.organizer.lastName}`.trim(),

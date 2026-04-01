@@ -122,6 +122,13 @@ export async function adminUpdateEventHandler(req: Request, res: Response) {
       });
     }
 
+    if ("error" in result && result.error === "INVALID_YOUTUBE_URL") {
+      return res.status(400).json({
+        success: false,
+        error: (result as { message?: string }).message ?? "Invalid YouTube URL",
+      });
+    }
+
     return res.json({
       success: true,
       data: result.event,
