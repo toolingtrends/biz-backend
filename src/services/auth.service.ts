@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import prisma from "../config/prisma";
 import { AuthTokenPayload, AuthRole, AuthDomain } from "../modules/auth.types";
+import { getDisplayName } from "../utils/display-name";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-jwt-secret";
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "dev-jwt-refresh-secret";
@@ -124,6 +125,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       avatar: user.avatar ?? undefined,
+      displayName: getDisplayName(user),
     };
 
     const tokens = AuthService.issueTokens(payload);
@@ -206,6 +208,7 @@ export class AuthService {
       firstName: user.firstName,
       lastName: user.lastName,
       avatar: user.avatar ?? undefined,
+      displayName: getDisplayName(user),
     };
 
     return AuthService.issueTokens(payload);

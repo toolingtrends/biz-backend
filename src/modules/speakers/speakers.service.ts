@@ -6,6 +6,8 @@ import {
   publicPublishedEventWhere,
 } from "../../utils/public-profile";
 import { hasPublicProfileImage } from "../../utils/profile-image";
+import { getDisplayName } from "../../utils/display-name";
+import { getPublicProfileSlug, isUuidLike, publicSlugRequestMatches } from "../../utils/profile-slug";
 
 // List speakers
 export async function listSpeakers(options?: { requireProfileImage?: boolean }) {
@@ -54,6 +56,14 @@ export async function listSpeakers(options?: { requireProfileImage?: boolean }) 
 
   return filtered.map((s) => ({
     ...s,
+    publicSlug: getPublicProfileSlug(
+      {
+        role: "SPEAKER",
+        firstName: s.firstName,
+        lastName: s.lastName,
+      },
+      "SPEAKER",
+    ),
     specialties: Array.isArray(s.specialties) ? s.specialties : [],
     achievements: Array.isArray(s.achievements) ? s.achievements : [],
     certifications: Array.isArray(s.certifications) ? s.certifications : [],
@@ -61,7 +71,36 @@ export async function listSpeakers(options?: { requireProfileImage?: boolean }) 
 }
 
 // Single speaker profile
-export async function getSpeakerById(id: string, viewerUserId?: string | null) {
+async function resolveSpeakerId(identifier: string): Promise<string | null> {
+  if (isUuidLike(identifier)) return identifier;
+  const targetSlug = String(identifier || "").trim().toLowerCase();
+  if (!targetSlug) return null;
+  const speakers = await prisma.user.findMany({
+    where: { role: "SPEAKER", isActive: true },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const withSlug = speakers.map((u) => ({
+    u,
+    slug: getPublicProfileSlug(
+      { role: "SPEAKER", firstName: u.firstName, lastName: u.lastName },
+      "SPEAKER",
+    ),
+  }));
+  const exact = withSlug.filter((x) => x.slug === targetSlug);
+  if (exact.length === 1) return exact[0].u.id;
+  const loose = withSlug.filter((x) => publicSlugRequestMatches(x.slug, targetSlug));
+  if (loose.length === 1) return loose[0].u.id;
+  if (loose.length > 1) {
+    const narrowed = loose.filter((x) => x.slug === targetSlug);
+    if (narrowed.length === 1) return narrowed[0].u.id;
+    return null;
+  }
+  return null;
+}
+
+export async function getSpeakerById(identifier: string, viewerUserId?: string | null) {
+  const id = await resolveSpeakerId(identifier);
+  if (!id) return null;
   await prisma.$connect();
 
   const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id);
@@ -78,6 +117,7 @@ export async function getSpeakerById(id: string, viewerUserId?: string | null) {
       email: true,
       phone: true,
       avatar: true,
+      role: true,
       bio: true,
       company: true,
       jobTitle: true,
@@ -105,8 +145,19 @@ export async function getSpeakerById(id: string, viewerUserId?: string | null) {
     return null;
   }
 
+  const displayName = getDisplayName(speaker);
+
   const profile = {
-    fullName: `${speaker.firstName} ${speaker.lastName}`,
+    displayName,
+    publicSlug: getPublicProfileSlug(
+      {
+        role: "SPEAKER",
+        firstName: speaker.firstName,
+        lastName: speaker.lastName,
+      },
+      "SPEAKER",
+    ),
+    fullName: displayName,
     designation: speaker.jobTitle || "",
     company: speaker.company || "",
     email: speaker.email,
@@ -124,6 +175,8 @@ export async function getSpeakerById(id: string, viewerUserId?: string | null) {
 
 // Speaker sessions (for Presentation Materials / My Sessions)
 export async function getSpeakerSessions(speakerId: string) {
+  speakerId = (await resolveSpeakerId(speakerId)) ?? "";
+  if (!speakerId) return [];
   const sessions = await prisma.speakerSession.findMany({
     where: { speakerId },
     include: {
@@ -359,7 +412,8 @@ export async function updateSpeakerProfile(
 
 // Speaker events
 export async function getSpeakerEvents(id: string, viewerUserId?: string | null) {
-  const speakerId = id;
+  const speakerId = (await resolveSpeakerId(id)) ?? "";
+  if (!speakerId) return { success: true, upcoming: [], past: [] };
 
   await prisma.$connect();
 

@@ -677,11 +677,15 @@ export async function updateOrganizerSubscriptionHandler(req: Request, res: Resp
 export async function getOrganizerReviewsHandler(req: Request, res: Response) {
   try {
     const { id } = req.params;
+    const organizerProfile = await getOrganizerById(id, undefined);
+    if (!organizerProfile) {
+      return res.status(404).json({ success: false, error: "Organizer not found" });
+    }
     const includeReplies = req.query.includeReplies === "true";
     const reviews = await listOrganizerReviews(id, { includeReplies });
 
     const organizer = await prisma.user.findFirst({
-      where: { id, role: "ORGANIZER" },
+      where: { id: organizerProfile.id, role: "ORGANIZER" },
       select: {
         id: true,
         averageRating: true,
@@ -720,11 +724,11 @@ export async function getOrganizerReviewsHandler(req: Request, res: Response) {
 
 export async function createOrganizerReviewHandler(req: Request, res: Response) {
   try {
-    const { id: organizerId } = req.params;
+    const { id: organizerIdentifier } = req.params;
     const userId = req.auth?.sub;
     const { rating, comment, title } = req.body ?? {};
 
-    if (!organizerId) {
+    if (!organizerIdentifier) {
       return res.status(400).json({ success: false, error: "Invalid organizer ID" });
     }
     if (!userId) {
@@ -737,8 +741,13 @@ export async function createOrganizerReviewHandler(req: Request, res: Response) 
       return res.status(400).json({ success: false, error: "Comment is required" });
     }
 
+    const organizerProfile = await getOrganizerById(organizerIdentifier, undefined);
+    if (!organizerProfile) {
+      return res.status(404).json({ success: false, error: "Organizer not found" });
+    }
+
     const review = await createOrganizerReview({
-      organizerId,
+      organizerId: organizerProfile.id,
       userId,
       rating: Number(rating),
       comment: String(comment).trim(),

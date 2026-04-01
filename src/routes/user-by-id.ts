@@ -2,6 +2,8 @@ import { Request, Response, Router } from "express";
 import prisma from "../config/prisma";
 import { requireUser, optionalUser } from "../middleware/auth.middleware";
 import { canUserViewOwnPrivateProfile, activePublicProfileUserWhere } from "../utils/public-profile";
+import { getDisplayName } from "../utils/display-name";
+import { getPublicProfileSlug, isUuidLike, publicSlugRequestMatches } from "../utils/profile-slug";
 
 const router = Router();
 
@@ -13,8 +15,38 @@ function serializeUser(user: any) {
     createdAt: user.createdAt?.toISOString?.() ?? user.createdAt,
     updatedAt: user.updatedAt?.toISOString?.() ?? user.updatedAt,
     lastLogin: user.lastLogin?.toISOString?.() ?? user.lastLogin ?? null,
+    displayName: getDisplayName(user),
+    publicSlug: getPublicProfileSlug(user, "ATTENDEE"),
     _count: { eventsAttended: 0, eventsOrganized: 0, connections: 0 },
   };
+}
+
+async function resolveUserId(identifier: string): Promise<string | null> {
+  if (isUuidLike(identifier)) return identifier;
+  const targetSlug = String(identifier || "").trim().toLowerCase();
+  if (!targetSlug) return null;
+  const users = await prisma.user.findMany({
+    where: { role: "ATTENDEE", isActive: true },
+    select: { id: true, firstName: true, lastName: true },
+    take: 5000,
+  });
+  const withSlug = users.map((u) => ({
+    u,
+    slug: getPublicProfileSlug(
+      { role: "ATTENDEE", firstName: u.firstName, lastName: u.lastName },
+      "ATTENDEE",
+    ),
+  }));
+  const exact = withSlug.filter((x) => x.slug === targetSlug);
+  if (exact.length === 1) return exact[0].u.id;
+  const loose = withSlug.filter((x) => publicSlugRequestMatches(x.slug, targetSlug));
+  if (loose.length === 1) return loose[0].u.id;
+  if (loose.length > 1) {
+    const narrowed = loose.filter((x) => x.slug === targetSlug);
+    if (narrowed.length === 1) return narrowed[0].u.id;
+    return null;
+  }
+  return null;
 }
 
 /** Map Prisma event (with venue, ticketTypes) to frontend dashboard shape. */
@@ -101,8 +133,14 @@ router.get("/users/search", async (req: Request, res: Response) => {
  * Private profiles return 404 unless the viewer is the same user (send Bearer token).
  */
 router.get("/users/:id", optionalUser, async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id: identifier } = req.params;
+  const id = await resolveUserId(identifier);
   if (!id) {
+    if (!isUuidLike(identifier)) {
+      return res
+        .status(404)
+        .json({ success: false, error: "User not found" });
+    }
     return res
       .status(400)
       .json({ success: false, error: "User id required" });
@@ -127,6 +165,7 @@ router.get("/users/:id", optionalUser, async (req: Request, res: Response) => {
         twitter: true,
         instagram: true,
         company: true,
+        organizationName: true,
         companyIndustry: true,
         jobTitle: true,
         location: true,
@@ -252,6 +291,7 @@ router.put("/users/:id", requireUser, async (req: Request, res: Response) => {
         twitter: true,
         instagram: true,
         company: true,
+        organizationName: true,
         companyIndustry: true,
         jobTitle: true,
         location: true,

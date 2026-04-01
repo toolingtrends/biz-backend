@@ -19,5 +19,7 @@ export interface AuthTokenPayload {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  /** Computed from role + profile fields (see getDisplayName). */
+  displayName?: string;
 }
 

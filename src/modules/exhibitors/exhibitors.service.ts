@@ -5,6 +5,8 @@ import {
   canUserViewOwnPrivateProfile,
   publicPublishedEventWhere,
 } from "../../utils/public-profile";
+import { getDisplayName } from "../../utils/display-name";
+import { getPublicProfileSlug, isUuidLike, publicSlugRequestMatches } from "../../utils/profile-slug";
 
 // List exhibitors (read-only)
 export async function listExhibitors() {
@@ -34,7 +36,18 @@ export async function listExhibitors() {
     },
   });
 
-  return exhibitors;
+  return exhibitors.map((e) => ({
+    ...e,
+    publicSlug: getPublicProfileSlug(
+      {
+        role: "EXHIBITOR",
+        firstName: e.firstName,
+        lastName: e.lastName,
+        company: e.company,
+      },
+      "EXHIBITOR",
+    ),
+  }));
 }
 
 /** Create a new exhibitor (User with role EXHIBITOR). */
@@ -174,7 +187,41 @@ export async function updateExhibitorProfile(
 }
 
 // Single exhibitor (read-only) – shape for public exhibitor page
-export async function getExhibitorById(id: string, viewerUserId?: string | null) {
+async function resolveExhibitorId(identifier: string): Promise<string | null> {
+  if (isUuidLike(identifier)) return identifier;
+  const targetSlug = String(identifier || "").trim().toLowerCase();
+  if (!targetSlug) return null;
+  const exhibitors = await prisma.user.findMany({
+    where: { role: "EXHIBITOR", isActive: true },
+    select: { id: true, firstName: true, lastName: true, organizationName: true, company: true },
+  });
+  const withSlug = exhibitors.map((u) => ({
+    u,
+    slug: getPublicProfileSlug(
+      {
+        role: "EXHIBITOR",
+        firstName: u.firstName,
+        lastName: u.lastName,
+        organizationName: u.organizationName,
+        company: u.company,
+      },
+      "EXHIBITOR",
+    ),
+  }));
+  const exact = withSlug.filter((x) => x.slug === targetSlug);
+  if (exact.length === 1) return exact[0].u.id;
+  const loose = withSlug.filter((x) => publicSlugRequestMatches(x.slug, targetSlug));
+  if (loose.length === 1) return loose[0].u.id;
+  if (loose.length > 1) {
+    const narrowed = loose.filter((x) => x.slug === targetSlug);
+    if (narrowed.length === 1) return narrowed[0].u.id;
+    return null;
+  }
+  return null;
+}
+
+export async function getExhibitorById(identifier: string, viewerUserId?: string | null) {
+  const id = await resolveExhibitorId(identifier);
   if (!id || id === "undefined") {
     throw new Error("Invalid exhibitor ID");
   }
@@ -237,11 +284,30 @@ export async function getExhibitorById(id: string, viewerUserId?: string | null)
     }),
   ]);
 
+  const displayName = getDisplayName({
+    role: "EXHIBITOR",
+    firstName: user.firstName,
+    lastName: user.lastName,
+    organizationName: user.organizationName,
+    company: user.company,
+  });
+
   return {
     id: user.id,
     email: user.email ?? "",
     firstName: user.firstName,
     lastName: user.lastName,
+    displayName,
+    publicSlug: getPublicProfileSlug(
+      {
+        role: "EXHIBITOR",
+        firstName: user.firstName,
+        lastName: user.lastName,
+        organizationName: user.organizationName,
+        company: user.company,
+      },
+      "EXHIBITOR",
+    ),
     phone: user.phone ?? undefined,
     avatar: user.avatar ?? undefined,
     bio: user.bio ?? user.description ?? undefined,
@@ -394,8 +460,9 @@ export async function getExhibitorAnalytics(_id: string) {
 
 // Exhibitor events (read-only)
 export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: string | null) {
+  exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";
   if (!exhibitorId) {
-    throw new Error("exhibitorId is required");
+    return [];
   }
 
   const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, exhibitorId);
@@ -498,8 +565,9 @@ export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: str
 
 // --- Exhibitor reviews ---
 export async function listExhibitorReviews(exhibitorId: string) {
+  exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";
   if (!exhibitorId) {
-    throw new Error("exhibitorId is required");
+    return [];
   }
   const rows = await prisma.review.findMany({
     where: { exhibitorId },

@@ -257,6 +257,7 @@ export async function getFeaturedEvents() {
     select: {
       id: true,
       title: true,
+      slug: true,
       startDate: true,
       bannerImage: true,
       images: true,
@@ -267,6 +268,10 @@ export async function getFeaturedEvents() {
 }
 
 // Event detail helpers (PostgreSQL: id is uuid; lookup by id or slug/title)
+function isEventIdUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.trim());
+}
+
 function generateSlug(title: string): string {
   return title
     .toLowerCase()
@@ -279,9 +284,11 @@ function generateSlug(title: string): string {
 }
 
 export async function getEventByIdentifier(id: string, viewerUserId?: string | null) {
-  if (!id) {
+  if (!id?.trim()) {
     throw new Error("Invalid event identifier");
   }
+
+  const trimmed = id.trim();
 
   const include = {
     organizer: {
@@ -331,17 +338,27 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
     _count: { select: { registrations: true, reviews: true } },
   };
 
-  let event: any = await prisma.event.findUnique({
-    where: { id },
-    include,
-  });
+  let event: any = null;
 
-  const slugOrTitle = id.replace(/-/g, " ").trim();
+  if (isEventIdUuid(trimmed)) {
+    event = await prisma.event.findUnique({
+      where: { id: trimmed },
+      include,
+    });
+  }
+
+  if (!event) {
+    event = await prisma.event.findUnique({
+      where: { slug: trimmed },
+      include,
+    });
+  }
+
+  const slugOrTitle = trimmed.replace(/-/g, " ").trim();
   if (!event) {
     event = await prisma.event.findFirst({
       where: {
         OR: [
-          { slug: id },
           { slug: { contains: slugOrTitle, mode: "insensitive" } },
           { title: { equals: slugOrTitle, mode: "insensitive" } },
           { title: { contains: slugOrTitle, mode: "insensitive" } },
@@ -610,6 +627,7 @@ export async function searchEntities(query: string, limit = 5) {
       select: {
         id: true,
         title: true,
+        slug: true,
         startDate: true,
         isVIP: true,
         isFeatured: true,
@@ -660,6 +678,7 @@ export async function searchEntities(query: string, limit = 5) {
   const eventResults = events.map((event: any) => ({
     id: event.id,
     title: event.title,
+    slug: event.slug,
     startDate: event.startDate,
     isVIP: event.isVIP,
     isFeatured: event.isFeatured,

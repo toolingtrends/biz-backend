@@ -6,6 +6,8 @@ import {
   publicPublishedEventWhere,
 } from "../../utils/public-profile";
 import { hasPublicProfileImage } from "../../utils/profile-image";
+import { getDisplayName } from "../../utils/display-name";
+import { getPublicProfileSlug, isUuidLike, publicSlugRequestMatches } from "../../utils/profile-slug";
 
 // ---------- List organizers ----------
 
@@ -72,9 +74,25 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
         },
       });
 
+      const displayName = getDisplayName({
+        role: "ORGANIZER",
+        firstName: organizer.firstName,
+        lastName: organizer.lastName,
+        organizationName: organizer.organizationName,
+      });
       return {
         id: organizer.id,
-        name: organizer.organizationName || `${organizer.firstName} ${organizer.lastName}`,
+        name: displayName,
+        displayName,
+        publicSlug: getPublicProfileSlug(
+          {
+            role: "ORGANIZER",
+            firstName: organizer.firstName,
+            lastName: organizer.lastName,
+            organizationName: organizer.organizationName,
+          },
+          "ORGANIZER",
+        ),
         company: organizer.organizationName || "",
         image: requireProfileImage
           ? organizer.avatar ?? ""
@@ -110,7 +128,41 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
 
 // ---------- Single organizer ----------
 
-export async function getOrganizerById(id: string, viewerUserId?: string | null) {
+async function resolveOrganizerId(identifier: string): Promise<string | null> {
+  if (isUuidLike(identifier)) return identifier;
+  const targetSlug = String(identifier || "").trim().toLowerCase();
+  if (!targetSlug) return null;
+  const organizers = await prisma.user.findMany({
+    where: { role: "ORGANIZER", isActive: true },
+    select: { id: true, firstName: true, lastName: true, organizationName: true },
+  });
+  const withSlug = organizers.map((u) => ({
+    u,
+    slug: getPublicProfileSlug(
+      {
+        role: "ORGANIZER",
+        firstName: u.firstName,
+        lastName: u.lastName,
+        organizationName: u.organizationName,
+      },
+      "ORGANIZER",
+    ),
+  }));
+  const exact = withSlug.filter((x) => x.slug === targetSlug);
+  if (exact.length === 1) return exact[0].u.id;
+  const loose = withSlug.filter((x) => publicSlugRequestMatches(x.slug, targetSlug));
+  if (loose.length === 1) return loose[0].u.id;
+  if (loose.length > 1) {
+    const narrowed = loose.filter((x) => x.slug === targetSlug);
+    if (narrowed.length === 1) return narrowed[0].u.id;
+    return null;
+  }
+  return null;
+}
+
+export async function getOrganizerById(identifier: string, viewerUserId?: string | null) {
+  const id = await resolveOrganizerId(identifier);
+  if (!id) return null;
   const organizer = await prisma.user.findFirst({
     where: {
       id,
@@ -211,9 +263,29 @@ export async function getOrganizerById(id: string, viewerUserId?: string | null)
     },
   });
 
+  const displayName = getDisplayName({
+    role: "ORGANIZER",
+    firstName: organizer.firstName,
+    lastName: organizer.lastName,
+    organizationName: organizer.organizationName,
+    company: organizer.company,
+  });
+
   const organizerData = {
     id: organizer.id,
-    name: `${organizer.firstName} ${organizer.lastName}`,
+    name: displayName,
+    displayName,
+    publicSlug: getPublicProfileSlug(
+      {
+        role: "ORGANIZER",
+        firstName: organizer.firstName,
+        lastName: organizer.lastName,
+        organizationName: organizer.organizationName,
+      },
+      "ORGANIZER",
+    ),
+    firstName: organizer.firstName,
+    lastName: organizer.lastName,
     company:
       organizer.organizationName || organizer.company || `${organizer.firstName} ${organizer.lastName}`,
     email: organizer.email,
@@ -605,6 +677,20 @@ const eventStatusMap: Record<string, string> = {
 };
 
 export async function listOrganizerEvents(organizerId: string, page = 1, limit = 50, viewerUserId?: string | null) {
+  organizerId = (await resolveOrganizerId(organizerId)) ?? "";
+  if (!organizerId) {
+    return {
+      events: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      },
+    };
+  }
   const skip = (page - 1) * limit;
 
   const org = await prisma.user.findFirst({
@@ -1086,6 +1172,8 @@ export async function updateOrganizerSubscriptionSummary(
 // ---------- Organizer reviews ----------
 
 export async function listOrganizerReviews(organizerId: string, options?: { includeReplies?: boolean }) {
+  organizerId = (await resolveOrganizerId(organizerId)) ?? "";
+  if (!organizerId) return [];
   const reviews = await prisma.review.findMany({
     where: { organizerId },
     include: {
