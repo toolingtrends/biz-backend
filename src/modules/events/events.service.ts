@@ -920,8 +920,61 @@ export async function listEventExhibitors(eventId: string) {
     },
     orderBy: { createdAt: "desc" },
   });
+  const exhibitorIds = Array.from(
+    new Set(
+      booths
+        .map((b) => b.exhibitor?.id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
 
-  return booths;
+  const follows = exhibitorIds.length
+    ? await prisma.follow.findMany({
+        where: { followingId: { in: exhibitorIds } },
+        select: {
+          followingId: true,
+          createdAt: true,
+          follower: {
+            select: {
+              id: true,
+              avatar: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+
+  const followerMap = new Map<
+    string,
+    { count: number; preview: Array<{ id: string; avatar: string | null; firstName: string; lastName: string }> }
+  >();
+
+  for (const row of follows) {
+    const bucket = followerMap.get(row.followingId) ?? { count: 0, preview: [] };
+    bucket.count += 1;
+    if (bucket.preview.length < 3) {
+      bucket.preview.push({
+        id: row.follower.id,
+        avatar: row.follower.avatar ?? null,
+        firstName: row.follower.firstName,
+        lastName: row.follower.lastName,
+      });
+    }
+    followerMap.set(row.followingId, bucket);
+  }
+
+  return booths.map((booth) => {
+    const exhibitorId = booth.exhibitor?.id ?? booth.exhibitorId;
+    const f = followerMap.get(exhibitorId) ?? { count: 0, preview: [] as Array<{ id: string; avatar: string | null; firstName: string; lastName: string }> };
+    return {
+      ...booth,
+      followersCount: f.count,
+      followerPreview: f.preview,
+    };
+  });
 }
 
 export async function listEventSpeakers(eventId: string) {
