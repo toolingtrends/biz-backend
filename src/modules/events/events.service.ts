@@ -184,7 +184,7 @@ export async function listEvents(params: ListEventsParams) {
       title: event.title,
       description: event.description,
       shortDescription: event.shortDescription,
-      subTitle: event.shortDescription,
+      subTitle: event.subTitle ?? event.shortDescription,
       edition: event.edition,
       slug: event.slug,
       startDate: event.startDate.toISOString(),
@@ -222,6 +222,7 @@ export async function listEvents(params: ListEventsParams) {
       cheapestTicket,
       currency: event.currency,
       images: event.images,
+      videos: event.videos ?? [],
       bannerImage: event.bannerImage,
       thumbnailImage: event.thumbnailImage,
       youtubeVideoUrl: event.youtubeVideoUrl ?? null,
@@ -416,7 +417,7 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
     ...event,
     title: event.title || "Untitled Event",
     description: event.description || event.shortDescription || "",
-    subTitle: event.shortDescription || null,
+    subTitle: event.subTitle ?? event.shortDescription ?? null,
     edition: event.edition || null,
     availableTickets,
     isAvailable: availableTickets > 0 && new Date() < event.registrationEnd,
@@ -1478,6 +1479,10 @@ export async function updateEventByOrganizer(
       resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
         ? String(resolvedShortDescription).trim()
         : null,
+    subTitle:
+      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
+        ? String(resolvedShortDescription).trim()
+        : existingEvent.subTitle ?? null,
     edition:
       body.edition != null && String(body.edition).trim() !== ""
         ? String(body.edition).trim()
@@ -1604,7 +1609,7 @@ export async function updateEventByOrganizer(
   return {
     event: {
       ...updatedEvent,
-      subTitle: updatedEvent.shortDescription || null,
+      subTitle: updatedEvent.subTitle ?? updatedEvent.shortDescription ?? null,
       edition: updatedEvent.edition || null,
     },
   };

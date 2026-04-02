@@ -280,6 +280,12 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
         : body.description
           ? String(body.description).substring(0, 200)
           : null,
+    subTitle:
+      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
+        ? String(resolvedShortDescription).trim()
+        : body.description
+          ? String(body.description).substring(0, 200)
+          : null,
     edition: body.edition != null && String(body.edition).trim() !== "" ? String(body.edition).trim() : null,
     slug,
     // Admin-created events are always approved (PUBLISHED) so they are not stuck in Drafts
