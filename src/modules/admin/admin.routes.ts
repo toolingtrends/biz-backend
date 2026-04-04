@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { requireAdmin, requirePermission } from "../../middleware/auth.middleware";
 import {
   adminGetEventsHandler,
@@ -9,6 +10,7 @@ import {
   adminApproveEventHandler,
   adminRejectEventHandler,
   adminGetDashboardHandler,
+  adminVerifyEventHandler,
 } from "./admin.controller";
 import { createEventAdminHandler } from "../events/events.controller";
 
@@ -40,9 +42,20 @@ import roleDefinitionsRoutes from "./role-definitions/role-definitions.routes";
 
 const router = Router();
 
+const verifyBadgeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
 // ─── Events (existing) ─────────────────────────────────────────────────────
 router.get("/events/stats", requireAdmin, adminGetEventStatsHandler);
 router.get("/events", requireAdmin, adminGetEventsHandler);
+router.post(
+  "/events/:id/verify",
+  requireAdmin,
+  verifyBadgeUpload.single("badgeFile"),
+  adminVerifyEventHandler
+);
 router.get("/events/:id", requireAdmin, adminGetEventByIdHandler);
 router.patch("/events/:id", requireAdmin, adminUpdateEventHandler);
 router.delete("/events/:id", requireAdmin, adminDeleteEventHandler);

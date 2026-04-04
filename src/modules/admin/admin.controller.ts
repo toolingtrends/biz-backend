@@ -11,6 +11,7 @@ import {
   adminListVisitors,
   adminGetDashboardSummary,
   adminListEventCategories,
+  adminVerifyEvent,
 } from "./admin.service";
 
 export async function adminGetEventsHandler(req: Request, res: Response) {
@@ -83,6 +84,45 @@ export async function adminGetEventByIdHandler(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       error: "Failed to fetch event",
+      details: error.message,
+    });
+  }
+}
+
+export async function adminVerifyEventHandler(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const raw = req.body?.isVerified;
+    const isVerified =
+      raw === true ||
+      raw === "true" ||
+      String(raw ?? "").toLowerCase() === "true";
+    const file = req.file as Express.Multer.File | undefined;
+    const verifiedBy = req.auth?.sub || req.auth?.email || "Admin";
+
+    const result = await adminVerifyEvent(id, {
+      isVerified,
+      badgeBuffer: file?.buffer,
+      verifiedBy,
+    });
+
+    if ("error" in result && result.error === "NOT_FOUND") {
+      return res.status(404).json({
+        success: false,
+        error: "Event not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: result.event,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Admin verify event error (backend):", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update verification",
       details: error.message,
     });
   }

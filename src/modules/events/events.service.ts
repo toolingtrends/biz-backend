@@ -155,6 +155,20 @@ export async function listEvents(params: ListEventsParams) {
             savedEvents: true,
           },
         },
+        savedEvents: {
+          orderBy: { savedAt: "desc" },
+          take: 3,
+          select: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+          },
+        },
         reviews: {
           select: {
             rating: true,
@@ -215,9 +229,18 @@ export async function listEvents(params: ListEventsParams) {
       isVerified: event.isVerified || false,
       verifiedAt: event.verifiedAt?.toISOString() ?? null,
       verifiedBy: event.verifiedBy || "",
+      verifiedBadgeImage: event.verifiedBadgeImage ?? null,
       attendees: event._count.registrations,
       totalReviews: event._count.reviews,
       followersCount: event._count.savedEvents ?? 0,
+      followerPreview: Array.isArray(event.savedEvents)
+        ? event.savedEvents.map((se: { user: { id: string; firstName: string; lastName: string; avatar: string | null } }) => ({
+            id: se.user.id,
+            firstName: se.user.firstName,
+            lastName: se.user.lastName,
+            avatar: se.user.avatar ?? null,
+          }))
+        : [],
       averageRating: avgRating,
       cheapestTicket,
       currency: event.currency,

@@ -45,6 +45,47 @@ const VALID_SPACE_TYPES = [
   "FOUR_SIDE_OPEN", "MEZZANINE", "ADDITIONAL_POWER", "COMPRESSED_AIR", "CUSTOM",
 ];
 
+/**
+ * Parses human-readable lines such as:
+ * `Student: ₹500 | General Admission: ₹1000 | VIP: ₹5000`
+ * Accepts `|`, `·`, or `•` as segment separators. Optional body keys:
+ * `ticketPricing`, `ticketPricingText`, `ticketPricingLine`, `ticketPricingSummary`.
+ */
+function parseTicketTypesFromSummary(body: Record<string, any>, capacityBase: number): any[] {
+  const raw = [body.ticketPricing, body.ticketPricingText, body.ticketPricingLine, body.ticketPricingSummary].find(
+    (x) => typeof x === "string" && String(x).trim().length > 0,
+  );
+  if (!raw) return [];
+  const segments = String(raw)
+    .trim()
+    .split(/\s*(?:\||·|•)\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const out: any[] = [];
+  for (const seg of segments) {
+    const colonIdx = seg.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const name = seg.slice(0, colonIdx).trim();
+    const rest = seg.slice(colonIdx + 1);
+    const numMatch = rest.match(/[\d][\d,]*/);
+    if (!name || !numMatch) continue;
+    const price = Number(numMatch[0].replace(/,/g, ""));
+    if (!Number.isFinite(price) || price < 0) continue;
+    const lower = name.toLowerCase();
+    let quantity = capacityBase;
+    if (lower.includes("student")) quantity = Math.max(1, Math.floor(capacityBase * 0.2));
+    else if (lower.includes("vip")) quantity = Math.max(1, Math.floor(capacityBase * 0.1));
+    out.push({
+      name,
+      description: "",
+      price,
+      quantity,
+      isActive: true,
+    });
+  }
+  return out;
+}
+
 function parseSpaceCosts(spaceCosts: any[], currency = "USD"): any[] {
   return spaceCosts.map((space, index) => {
     const raw = (space.spaceType || space.type || "CUSTOM").toString().toLowerCase();
@@ -336,9 +377,19 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     };
   };
 
-  const providedTicketTypes = Array.isArray(body.ticketTypes)
+  let providedTicketTypes = Array.isArray(body.ticketTypes)
     ? body.ticketTypes.map(normalizeTicket).filter((t: any) => t.isActive)
     : [];
+  // If client sends ticketTypes but every price is 0, ignore and use general/student/vip or summary string.
+  if (providedTicketTypes.length > 0 && providedTicketTypes.every((t: any) => Number(t.price) <= 0)) {
+    providedTicketTypes = [];
+  }
+  if (providedTicketTypes.length === 0) {
+    const fromSummary = parseTicketTypesFromSummary(body, capacityBase);
+    if (fromSummary.length > 0) {
+      providedTicketTypes = fromSummary;
+    }
+  }
 
   const ticketTypesData: any[] = providedTicketTypes.length > 0
     ? providedTicketTypes

@@ -1,6 +1,7 @@
 import prisma from "../../config/prisma";
 import { EventStatus } from "@prisma/client";
 import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
+import { uploadImage } from "../../services/cloudinary.service";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -52,9 +53,6 @@ export async function updateAdminEvent(params: UpdateAdminEventParams) {
     if (isVerified) {
       data.verifiedAt = new Date();
       data.verifiedBy = adminEmail ?? "Admin";
-      if (!data.verifiedBadgeImage) {
-        data.verifiedBadgeImage = "/badge/VerifiedBADGE (1).png";
-      }
     } else {
       data.verifiedAt = null;
       data.verifiedBy = null;
@@ -466,6 +464,52 @@ export async function adminUpdateEvent(
   const event = await prisma.event.update({
     where: { id },
     data: updateData as any,
+  });
+
+  return { event };
+}
+
+/** Toggle verification; optional new badge file uploads to Cloudinary and sets `verifiedBadgeImage` (no default dummy asset). */
+export async function adminVerifyEvent(
+  eventId: string,
+  params: { isVerified: boolean; badgeBuffer?: Buffer; verifiedBy: string }
+) {
+  const existing = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, verifiedBadgeImage: true },
+  });
+
+  if (!existing) {
+    return { error: "NOT_FOUND" as const };
+  }
+
+  if (!params.isVerified) {
+    const event = await prisma.event.update({
+      where: { id: eventId },
+      data: {
+        isVerified: false,
+        verifiedAt: null,
+        verifiedBy: null,
+        verifiedBadgeImage: null,
+      },
+    });
+    return { event };
+  }
+
+  let verifiedBadgeImage: string | null = existing.verifiedBadgeImage ?? null;
+  if (params.badgeBuffer && params.badgeBuffer.length > 0) {
+    const uploaded = await uploadImage(params.badgeBuffer, "event-badges");
+    verifiedBadgeImage = uploaded.secure_url;
+  }
+
+  const event = await prisma.event.update({
+    where: { id: eventId },
+    data: {
+      isVerified: true,
+      verifiedAt: new Date(),
+      verifiedBy: params.verifiedBy,
+      verifiedBadgeImage,
+    },
   });
 
   return { event };
