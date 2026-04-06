@@ -35,6 +35,7 @@ export async function createBanner(req: Request, res: Response) {
       width: b.width != null ? Number(b.width) : undefined,
       height: b.height != null ? Number(b.height) : undefined,
       isActive: b.isActive !== false,
+      link: typeof b.link === "string" && b.link.trim() ? String(b.link).trim() : undefined,
     });
     return res.status(201).json({ success: true, data: created });
   } catch (e: any) {

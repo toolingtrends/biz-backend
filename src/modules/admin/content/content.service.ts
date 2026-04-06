@@ -27,6 +27,13 @@ export function mapBannerRow(row: {
   const position = String(ex.position ?? "hero");
   const width = Number(ex.width ?? 1200);
   const height = Number(ex.height ?? 400);
+  const linkRaw = ex.link;
+  const link =
+    typeof linkRaw === "string" && linkRaw.trim()
+      ? linkRaw.trim()
+      : linkRaw != null && String(linkRaw).trim()
+        ? String(linkRaw).trim()
+        : undefined;
   return {
     id: row.id,
     title: row.title ?? "Banner",
@@ -34,6 +41,7 @@ export function mapBannerRow(row: {
     publicId,
     page,
     position,
+    link,
     isActive: row.published,
     width,
     height,
@@ -76,6 +84,7 @@ export async function createBanner(input: {
   width?: number;
   height?: number;
   isActive?: boolean;
+  link?: string;
 }) {
   const extras = {
     page: input.page,
@@ -84,6 +93,7 @@ export async function createBanner(input: {
     publicId: input.publicId ?? "",
     width: input.width ?? 1200,
     height: input.height ?? 400,
+    ...(input.link != null && String(input.link).trim() ? { link: String(input.link).trim() } : {}),
   };
   const row = await prisma.adminContent.create({
     data: {
@@ -99,7 +109,15 @@ export async function createBanner(input: {
 
 export async function patchBanner(
   id: string,
-  patch: Partial<{ title: string; isActive: boolean; page: string; position: string; imageUrl: string; publicId: string }>,
+  patch: Partial<{
+    title: string;
+    isActive: boolean;
+    page: string;
+    position: string;
+    imageUrl: string;
+    publicId: string;
+    link: string;
+  }>,
 ) {
   const existing = await prisma.adminContent.findFirst({
     where: { id, type: "BANNER" },
@@ -111,6 +129,10 @@ export async function patchBanner(
   if (patch.position !== undefined) nextExtras.position = patch.position;
   if (patch.imageUrl !== undefined) nextExtras.imageUrl = patch.imageUrl;
   if (patch.publicId !== undefined) nextExtras.publicId = patch.publicId;
+  if (patch.link !== undefined) {
+    if (patch.link === "" || patch.link == null) delete nextExtras.link;
+    else nextExtras.link = patch.link;
+  }
 
   const row = await prisma.adminContent.update({
     where: { id },
