@@ -273,23 +273,50 @@ export async function listEvents(params: ListEventsParams) {
   };
 }
 
-// Featured events
+// Featured events — same venue/location shape as listEvents so home cards get city/country.
 export async function getFeaturedEvents() {
-  return prisma.event.findMany({
+  const events = await prisma.event.findMany({
     where: {
       AND: [{ isFeatured: true }, publicPublishedEventWhere()],
     },
-    select: {
-      id: true,
-      title: true,
-      slug: true,
-      startDate: true,
-      bannerImage: true,
-      images: true,
-      category: true,
+    include: {
+      venue: {
+        select: {
+          venueName: true,
+          venueCity: true,
+          venueState: true,
+          venueCountry: true,
+          venueAddress: true,
+        },
+      },
     },
     orderBy: { startDate: "asc" as const },
   });
+
+  return events.map((event) => ({
+    id: event.id,
+    title: event.title,
+    slug: event.slug,
+    startDate: event.startDate.toISOString(),
+    endDate: event.endDate.toISOString(),
+    bannerImage: event.bannerImage,
+    images: event.images,
+    edition: event.edition,
+    tags: event.tags,
+    eventType: event.eventType,
+    categories: event.category,
+    averageRating: event.averageRating,
+    totalReviews: event.totalReviews,
+    venue: event.venue
+      ? {
+          venueName: event.venue.venueName,
+          venueAddress: event.venue.venueAddress,
+          venueCity: event.venue.venueCity,
+          venueCountry: event.venue.venueCountry,
+        }
+      : null,
+    isVirtual: event.isVirtual,
+  }));
 }
 
 // Event detail helpers (PostgreSQL: id is uuid; lookup by id or slug/title)
