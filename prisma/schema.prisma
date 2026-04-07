@@ -1,0 +1,1234 @@
+// Backend Prisma schema – PostgreSQL (Neon)
+// Migrated from MongoDB: uuid ids, no ObjectId, referential integrity
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+enum AdminRole {
+  SUPER_ADMIN
+  SUB_ADMIN
+}
+
+enum AdminType {
+  SUPER_ADMIN
+  SUB_ADMIN
+}
+
+enum UserRole {
+  ADMIN
+  ORGANIZER
+  ATTENDEE
+  SPEAKER
+  EXHIBITOR
+  VENUE_MANAGER
+}
+
+enum AccountDeactivationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum EventStatus {
+  DRAFT
+  PENDING_APPROVAL
+  REJECTED
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum SessionType {
+  KEYNOTE
+  PRESENTATION
+  WORKSHOP
+  PANEL
+  ROUNDTABLE
+}
+
+enum SessionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ExhibitionSpaceType {
+  SHELL_SPACE
+  RAW_SPACE
+  TWO_SIDE_OPEN
+  THREE_SIDE_OPEN
+  FOUR_SIDE_OPEN
+  MEZZANINE
+  ADDITIONAL_POWER
+  COMPRESSED_AIR
+  CUSTOM
+}
+
+enum BoothStatus {
+  BOOKED
+  CONFIRMED
+  SETUP
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  BLOCKED
+}
+
+enum MessageType {
+  TEXT
+  SYSTEM
+}
+
+enum AdminContentType {
+  NEWS
+  BLOG
+  BANNER
+  FEATURED_EVENT
+  MEDIA
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ─── Admin ──────────────────────────────────────────────────────────────────
+model SuperAdmin {
+  id       String   @id @default(uuid()) @db.Uuid
+  email    String   @unique
+  password String
+  name     String
+  phone    String?
+
+  role      AdminRole @default(SUPER_ADMIN)
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+
+  permissions String[]
+
+  twoFactorEnabled Boolean   @default(false)
+  loginAttempts    Int       @default(0)
+  lockoutUntil     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subAdmins     SubAdmin[]
+  adminSessions AdminSession[]
+  adminLogs     AdminLog[]
+  rejectedEvents Event[] @relation("RejectedEvents")
+
+  @@map("super_admins")
+}
+
+model SubAdmin {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      String   @default("SUB_ADMIN")
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+
+  permissions String[]
+
+  createdById String @db.Uuid
+  createdBy   SuperAdmin @relation(fields: [createdById], references: [id])
+
+  twoFactorEnabled Boolean   @default(false)
+  loginAttempts    Int       @default(0)
+  lockoutUntil     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adminSessions AdminSession[]
+  adminLogs     AdminLog[]
+
+  @@map("sub_admins")
+}
+
+/// Named role templates for sub-admins (custom roles + built-in SUB_ADMIN / MODERATOR / SUPPORT).
+model AdminRoleDefinition {
+  id                 String   @id @default(uuid()) @db.Uuid
+  slug               String   @unique
+  name               String
+  description        String?
+  defaultPermissions String[] @default([])
+  isActive           Boolean  @default(true)
+  isSystem           Boolean  @default(false)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("admin_role_definitions")
+}
+
+model AdminSession {
+  id           String    @id @default(uuid()) @db.Uuid
+  adminId      String
+  token        String    @unique
+  refreshToken String    @unique
+  deviceInfo   String?
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  adminType    AdminType
+
+  superAdminId String? @db.Uuid
+  superAdmin   SuperAdmin?  @relation(fields: [superAdminId], references: [id])
+  subAdminId   String? @db.Uuid
+  subAdmin     SubAdmin?    @relation(fields: [subAdminId], references: [id])
+
+  @@index([adminId, adminType])
+  @@map("admin_sessions")
+}
+
+model AdminLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  adminId    String
+  action     String
+  resource   String?
+  resourceId String?
+  details    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  adminType  AdminType
+
+  superAdminId String? @db.Uuid
+  superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id])
+  subAdminId   String? @db.Uuid
+  subAdmin     SubAdmin?   @relation(fields: [subAdminId], references: [id])
+
+  @@index([adminId, adminType])
+  @@index([action])
+  @@index([createdAt])
+  @@map("admin_logs")
+}
+
+// ─── OTP (replaces Mongoose) ────────────────────────────────────────────────
+model Otp {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  otp       String
+  expiresAt DateTime
+  /// When set, OTP is for email change / verification for this user (not signup).
+  userId    String?  @db.Uuid
+  /// "registration" = signup flow; "admin_password_reset" = super/sub-admin forgot password.
+  purpose   String   @default("registration")
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([userId])
+  @@index([email, purpose])
+  @@map("otps")
+}
+
+// ─── User ───────────────────────────────────────────────────────────────────
+model User {
+  id       String  @id @default(uuid()) @db.Uuid
+  email    String? @unique
+  password String  @default("TEMP_PASSWORD")
+
+  firstName String
+  lastName  String
+  phone     String?
+  avatar    String?
+  role      UserRole @default(ATTENDEE)
+  isVerified Boolean @default(false)
+  isActive   Boolean @default(true)
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
+  twoFactorEnabled Boolean @default(false)
+  lastLogin DateTime?
+  loginAttempts Int @default(0)
+  lockoutUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resetToken            String?
+  resetTokenExpiry      DateTime?
+  otp                   String?
+  otpExpiry             DateTime?
+  lastPasswordChange    DateTime?
+  passwordResetAttempts Int @default(0)
+
+  bio             String?
+  website         String?
+  linkedin        String?
+  twitter         String?
+  instagram       String?
+  company         String?
+  companyIndustry String?
+  jobTitle        String?
+  location        String?
+  timezone        String?
+  language        String   @default("en")
+  interests       String[] @default([])
+
+  /// Privacy & notification preferences (dashboard Settings)
+  profileVisibility  String  @default("public") // "public" | "private"
+  introduceMe        Boolean @default(true)
+  emailNotifications Boolean @default(true)
+  eventReminders       Boolean @default(true)
+  newMessages          Boolean @default(true)
+  connectionRequests   Boolean @default(true)
+
+  organizationName String?
+  description      String?
+  headquarters     String?
+  founded          String?
+  teamSize         String?
+  specialties      String[] @default([])
+  achievements     String[] @default([])
+  certifications   String[] @default([])
+
+  businessEmail   String?
+  businessPhone   String?
+  businessAddress String?
+  taxId           String?
+
+  totalEvents    Int   @default(0)
+  activeEvents   Int   @default(0)
+  totalAttendees Int   @default(0)
+  totalRevenue   Float @default(0)
+
+  organizerId String? @db.Uuid
+  organizer   User?   @relation("OrganizerSpeakers", fields: [organizerId], references: [id])
+  speakers    User[]  @relation("OrganizerSpeakers")
+
+  organizerIdForExhibitor String? @db.Uuid
+  organizerForExhibitor   User?   @relation("OrganizerExhibitors", fields: [organizerIdForExhibitor], references: [id])
+  exhibitors              User[]  @relation("OrganizerExhibitors")
+
+  organizerIdForVenueManager String? @db.Uuid
+  organizerForVenueManager   User?   @relation("OrganizerVenueManagers", fields: [organizerIdForVenueManager], references: [id])
+  venueManagers              User[]  @relation("OrganizerVenueManagers")
+
+  venueName        String?
+  venueDescription String?
+  venueAddress     String?
+  venueCity        String?
+  venueState       String?
+  venueCountry     String?
+  venueZipCode     String?
+  venuePhone       String?
+  venueEmail       String?
+  venueWebsite     String?
+  maxCapacity      Int?
+  totalHalls       Int?
+  activeBookings   Int?
+  averageRating    Float   @default(0)
+  totalReviews     Int     @default(0)
+  amenities        String[] @default([])
+  venueImages      String[] @default([])
+  venueVideos      String[] @default([])
+  floorPlans       String[] @default([])
+  meetingSpaces    Json?   // Halls: array of { id, name, capacity, area, hourlyRate?, features? }
+  virtualTour      String?
+  basePrice        Float?
+  venueCurrency    String  @default("USD")
+  latitude         Float?
+  longitude        Float?
+
+  speakingExperience String?
+
+  organizedEvents   Event[]  @relation("EventOrganizer")
+  venueEvents       Event[]  @relation("EventVenue")
+  registrations     EventRegistration[]
+  speakerSessions   SpeakerSession[]
+  speakerMaterials SessionMaterial[]
+  exhibitorBooths   ExhibitorBooth[]
+  products         Product[]
+  organizerPromotions Promotion[] @relation("OrganizerPromotions")
+  exhibitorPromotions Promotion[] @relation("ExhibitorPromotions")
+  savedEvents       SavedEvent[]
+  reviews           Review[]
+  leads             EventLead[]
+
+  // Venue appointments (as venue manager)
+  venueAppointments VenueAppointment[] @relation("VenueAppointmentVenue")
+  exhibitorSuggestions  ExhibitorSuggestion[] @relation("VisitorSuggestions")
+  visitorSuggestions    ExhibitorSuggestion[] @relation("ExhibitorSuggestions") 
+
+  // Venue appointments (as visitor/requester)
+  visitorAppointments VenueAppointment[] @relation("VenueAppointmentVisitor")
+
+  // Event-exhibitor appointments (as requester / visitor)
+  appointmentsAsRequester Appointment[] @relation("AppointmentRequester")
+  // Event-exhibitor appointments (as exhibitor)
+  appointmentsAsExhibitor Appointment[] @relation("AppointmentExhibitor")
+
+  exhibitorManuals ExhibitorManual[]
+  reviewReplies    ReviewReply[]
+
+  // Network: connection requests (sent and received)
+  connectionsSent     Connection[] @relation("ConnectionRequester")
+  connectionsReceived Connection[] @relation("ConnectionReceiver")
+
+  // Follow: users who follow this user (e.g. exhibitor followers)
+  followersAsFollowed Follow[] @relation("UserAsFollowing")
+  followingAsFollower Follow[] @relation("UserAsFollower")
+
+  // Messaging: conversations and messages
+  conversationParticipants ConversationParticipant[]
+  messagesSent             Message[]
+  conversationSummaries    ConversationSummary[]
+
+  accountDeactivationRequests AccountDeactivationRequest[]
+
+  adminUserSubscriptions AdminUserSubscription[]
+
+  supportTickets       SupportTicket[]
+  supportTicketReplies SupportTicketReply[]
+
+  @@map("users")
+}
+
+/// End-user support tickets (raised from dashboards; admins respond in admin panel).
+model SupportTicket {
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String                @db.Uuid
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String                @db.Text
+  category    String                @default("general")
+  priority    SupportTicketPriority @default(MEDIUM)
+  status      SupportTicketStatus   @default(OPEN)
+  /// Snapshot of User.role when the ticket was created (admin filters).
+  userRoleAtCreate String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  replies     SupportTicketReply[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model SupportTicketReply {
+  id             String        @id @default(uuid()) @db.Uuid
+  ticketId       String        @db.Uuid
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  content        String        @db.Text
+  isStaffReply   Boolean       @default(false)
+  authorUserId   String?       @db.Uuid
+  authorUser     User?         @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  staffAuthorName String?
+  createdAt      DateTime      @default(now())
+
+  @@index([ticketId])
+  @@map("support_ticket_replies")
+}
+
+model AccountDeactivationRequest {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  userId                String                    @db.Uuid
+  user                  User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status                AccountDeactivationStatus @default(PENDING)
+  requestedAt           DateTime                  @default(now())
+  reviewedAt            DateTime?
+  /// Super admin or sub-admin id who reviewed
+  reviewedByAdminId     String?                   @db.Uuid
+  reviewedByAdminType   String?
+  /// After this instant the user account is set inactive (approval date + 30 days)
+  deactivateEffectiveAt DateTime?
+  rejectReason          String?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("account_deactivation_requests")
+}
+
+// ─── Event Categories (admin) ─────────────────────────────────────────────────
+
+model EventCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  icon      String?
+  color     String?  @default("#3B82F6")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("event_categories")
+}
+
+// ─── Event ──────────────────────────────────────────────────────────────────
+model Event {
+  id               String      @id @default(uuid()) @db.Uuid
+  title            String
+  description      String
+  shortDescription String?
+  subTitle         String?
+  slug             String      @unique
+  status           EventStatus @default(DRAFT)
+  category         String[]    @default([])
+  edition          String?
+  tags             String[]    @default([])
+  eventType        String[]    @default([])
+
+  isVerified  Boolean   @default(false)
+  verifiedAt  DateTime?
+  verifiedBy  String?
+  verifiedBadgeImage String?
+  isFeatured  Boolean?  @default(false)
+  isVIP       Boolean?  @default(false)
+
+  startDate         DateTime
+  endDate           DateTime
+  registrationStart DateTime
+  registrationEnd   DateTime
+  timezone          String
+
+  venueId     String? @db.Uuid
+  venue       User?   @relation("EventVenue", fields: [venueId], references: [id])
+  isVirtual   Boolean @default(false)
+  virtualLink String?
+
+  maxAttendees     Int?
+  currentAttendees Int    @default(0)
+  currency         String @default("USD")
+
+  images         String[] @default([])
+  videos         String[] @default([])
+  /// Single promo / embed URL (normalized to youtube.com/watch?v=…)
+  youtubeVideoUrl String?
+  brochure       String?
+  layoutPlan     String?
+  documents      String[] @default([])
+  bannerImage    String?
+  thumbnailImage String?
+
+  isPublic         Boolean @default(true)
+  requiresApproval Boolean @default(false)
+  allowWaitlist    Boolean @default(false)
+  refundPolicy     String?
+
+  metaTitle       String?
+  metaDescription String?
+
+  organizerId String @db.Uuid
+  organizer   User   @relation("EventOrganizer", fields: [organizerId], references: [id])
+
+  averageRating Float @default(0)
+  totalReviews  Int   @default(0)
+
+  rejectionReason String?
+  rejectedAt      DateTime?
+  rejectedById    String? @db.Uuid
+  rejectedBy      SuperAdmin? @relation("RejectedEvents", fields: [rejectedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  exhibitionSpaces  ExhibitionSpace[]
+  ticketTypes       TicketType[]
+  speakerSessions   SpeakerSession[]
+  exhibitorBooths   ExhibitorBooth[]
+  registrations     EventRegistration[]
+  reviews           Review[]
+  leads             EventLead[]
+  promotions        Promotion[]
+  savedEvents       SavedEvent[]
+
+  analytics        EventAnalytics[]
+  appointments     Appointment[]
+  conferences      Conference[]
+  exhibitorManuals ExhibitorManual[]
+
+  @@map("events")
+}
+
+// Exhibitor manual PDFs (per event)
+model ExhibitorManual {
+  id           String   @id @default(uuid()) @db.Uuid
+  eventId      String   @db.Uuid
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  uploadedById String   @db.Uuid
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  fileName     String
+  fileUrl      String
+  fileSize     Int
+  mimeType     String   @default("application/pdf")
+  description  String?
+  version      String?  @default("1.0")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([eventId])
+  @@map("exhibitor_manuals")
+}
+
+// Conference agenda (days/themes and sessions per event)
+model Conference {
+  id         String   @id @default(uuid()) @db.Uuid
+  eventId    String   @db.Uuid
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  date       String
+  day        String
+  theme      String
+  isPublished Boolean @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  sessions   ConferenceSession[]
+
+  @@index([eventId])
+  @@map("conferences")
+}
+
+model ConferenceSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  conferenceId String   @db.Uuid
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+  time         String
+  title        String
+  description  String?
+  speaker      String?
+  type         String   @default("SESSION")
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([conferenceId])
+  @@map("conference_sessions")
+}
+
+// Event–exhibitor–visitor meeting requests (Schedule Meeting on event exhibitor list)
+model Appointment {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @db.Uuid
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  exhibitorId String   @db.Uuid
+  exhibitor   User     @relation("AppointmentExhibitor", fields: [exhibitorId], references: [id])
+  requesterId String   @db.Uuid
+  requester   User     @relation("AppointmentRequester", fields: [requesterId], references: [id])
+
+  title       String
+  description String?
+  type        String   @default("CONSULTATION")
+  status      String   @default("PENDING")
+  priority    String   @default("MEDIUM")
+
+  requestedDate DateTime
+  requestedTime String
+  duration      Int      @default(60)
+  confirmedDate DateTime?
+  confirmedTime String?
+
+  meetingType String  @default("IN_PERSON")
+  location    String?
+  meetingLink String?
+
+  purpose String?
+  agenda String[] @default([])
+  notes  String?
+
+  requesterCompany String?
+  requesterTitle   String?
+  requesterPhone  String?
+  requesterEmail  String?
+
+  cancellationReason String?
+  cancelledBy        String?  @db.Uuid
+  cancelledAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([exhibitorId])
+  @@index([requesterId])
+  @@index([status])
+  @@map("appointments")
+}
+
+model TicketType {
+  id      String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?
+  price          Float
+  earlyBirdPrice Float?
+  earlyBirdEnd   DateTime?
+  quantity       Int
+  sold           Int       @default(0)
+  isActive       Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ticket_types")
+}
+
+model ExhibitionSpace {
+  id      String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  spaceType   ExhibitionSpaceType
+  name        String
+  description String
+  dimensions  String?
+  area        Float
+  location    String?
+
+  basePrice   Float
+  pricePerSqm Float?
+  minArea     Float?
+  currency    String @default("USD")
+
+  powerIncluded       Boolean @default(false)
+  additionalPowerRate Float?
+  compressedAirRate   Float?
+
+  unit         String?
+  pricePerUnit Float?
+
+  isFixed      Boolean @default(false)
+  isAvailable  Boolean @default(true)
+  maxBooths    Int?
+  bookedBooths Int     @default(0)
+
+  setupRequirements Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  exhibitorBooths ExhibitorBooth[]
+
+  @@map("exhibition_spaces")
+}
+
+model ExhibitorBooth {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @db.Uuid
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  exhibitorId String @db.Uuid
+  exhibitor   User     @relation(fields: [exhibitorId], references: [id])
+  spaceId     String @db.Uuid
+  space       ExhibitionSpace @relation(fields: [spaceId], references: [id])
+  spaceReference String?
+
+  boothNumber String
+  companyName String
+  description String?
+
+  additionalPower Float @default(0)
+  compressedAir   Float @default(0)
+  setupRequirements Json?
+  specialRequests   String?
+
+  totalCost Float
+  currency  String @default("USD")
+  status    BoothStatus @default(BOOKED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, exhibitorId])
+  @@map("exhibitor_booths")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  category    String?
+  description String?
+  price       Float?
+  currency    String?
+  images      String[] @default([])
+  brochure    String[] @default([])
+  youtube     String[] @default([])
+  exhibitorId String   @db.Uuid
+  exhibitor   User     @relation(fields: [exhibitorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([exhibitorId])
+  @@map("products")
+}
+
+model SpeakerSession {
+  id        String @id @default(uuid()) @db.Uuid
+  eventId   String @db.Uuid
+  event     Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  speakerId String @db.Uuid
+  speaker   User   @relation(fields: [speakerId], references: [id])
+
+  title       String
+  description String
+  sessionType SessionType
+  duration    Int
+  startTime   DateTime
+  endTime     DateTime
+  room        String?
+
+  abstract           String?
+  learningObjectives String[] @default([])
+  targetAudience     String?
+  youtube            String[] @default([])
+
+  status SessionStatus @default(SCHEDULED)
+  averageRating Float @default(0)
+  totalRatings  Int   @default(0)
+
+  materials SessionMaterial[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("speaker_sessions")
+}
+
+model SessionMaterial {
+  id          String   @id @default(uuid()) @db.Uuid
+  sessionId   String   @db.Uuid
+  session     SpeakerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  speakerId   String   @db.Uuid
+  speaker     User     @relation(fields: [speakerId], references: [id], onDelete: Cascade)
+
+  fileName    String
+  fileUrl     String
+  publicId    String?
+  fileSize    Int
+  fileType    String   // PRESENTATION, DOCUMENT, VIDEO, IMAGE, OTHER
+  mimeType    String
+  status      String   @default("DRAFT") // DRAFT, FINAL, ARCHIVED
+  allowDownload Boolean @default(true)
+  description String?
+
+  downloadCount Int @default(0)
+  viewCount     Int @default(0)
+  uploadedAt    DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([speakerId])
+  @@map("session_materials")
+}
+
+model Promotion {
+  id          String  @id @default(uuid()) @db.Uuid
+  organizerId String? @db.Uuid
+  organizer   User?   @relation("OrganizerPromotions", fields: [organizerId], references: [id])
+  exhibitorId String? @db.Uuid
+  exhibitor   User?   @relation("ExhibitorPromotions", fields: [exhibitorId], references: [id])
+  eventId     String? @db.Uuid
+  event       Event?  @relation(fields: [eventId], references: [id])
+
+  packageType      String
+  targetCategories String[] @default([])
+  status           String   @default("PENDING")
+  amount           Float
+  duration         Int
+  startDate        DateTime
+  endDate          DateTime
+
+  impressions Int @default(0)
+  clicks      Int @default(0)
+  conversions Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("promotions")
+}
+
+model SavedEvent {
+  id      String   @id @default(uuid()) @db.Uuid
+  userId  String   @db.Uuid
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId String   @db.Uuid
+  event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  savedAt DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@map("saved_events")
+}
+
+model EventRegistration {
+  id      String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  event   Event  @relation(fields: [eventId], references: [id])
+  userId  String @db.Uuid
+  user    User   @relation(fields: [userId], references: [id])
+  ticketTypeId String?
+  quantity     Int    @default(1)
+  totalAmount  Float?
+  currency     String @default("USD")
+  status       String?
+  registeredAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("event_registrations")
+}
+
+model Review {
+  id           String        @id @default(uuid()) @db.Uuid
+  userId       String?       @db.Uuid
+  user         User?         @relation(fields: [userId], references: [id])
+  eventId      String?       @db.Uuid
+  event        Event?        @relation(fields: [eventId], references: [id])
+  exhibitorId  String?       @db.Uuid
+  venueId      String?       @db.Uuid
+  organizerId  String?       @db.Uuid
+  rating       Int?
+  title        String?
+  comment      String?
+  isApproved   Boolean       @default(false)
+  isPublic     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  replies      ReviewReply[]
+
+  @@map("reviews")
+}
+
+model ReviewReply {
+  id               String   @id @default(uuid()) @db.Uuid
+  reviewId         String   @db.Uuid
+  review           Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  userId           String   @db.Uuid
+  user             User     @relation(fields: [userId], references: [id])
+  content          String
+  isOrganizerReply Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("review_replies")
+}
+
+model EventLead {
+  id          String  @id @default(uuid()) @db.Uuid
+  eventId     String? @db.Uuid
+  event       Event?  @relation(fields: [eventId], references: [id])
+  userId      String? @db.Uuid
+  user        User?   @relation(fields: [userId], references: [id])
+  ticketTypeId String?
+  type        String?
+  status      String? @default("NEW")
+  notes       String?
+  contactedAt  DateTime?
+  followUpDate DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("event_leads")
+}
+
+model EventAnalytics {
+  id      String @id @default(uuid()) @db.Uuid
+  eventId String @db.Uuid
+  event   Event  @relation(fields: [eventId], references: [id])
+
+  totalRegistrations Int   @default(0)
+  totalRevenue       Float @default(0)
+  conversionRate     Float @default(0)
+
+  pageViews         Int   @default(0)
+  uniqueVisitors    Int   @default(0)
+  averageTimeOnPage Float @default(0)
+
+  topCountries Json?
+  topCities    Json?
+
+  trafficSources Json?
+
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@map("event_analytics")
+}
+
+// ─── Venue Appointments ───────────────────────────────────────────────────────
+model VenueAppointment {
+  id        String   @id @default(uuid()) @db.Uuid
+
+  // The venue manager (User with role VENUE_MANAGER) this appointment is for
+  venueId   String   @db.Uuid
+  venue     User     @relation("VenueAppointmentVenue", fields: [venueId], references: [id])
+
+  // The visitor (User) who requested the appointment, optional for now
+  visitorId String?  @db.Uuid
+  visitor   User?    @relation("VenueAppointmentVisitor", fields: [visitorId], references: [id])
+
+  requestedDate DateTime
+  requestedTime String
+  duration      Int       @default(30) // minutes
+
+  purpose   String?
+  notes     String?
+  location  String?
+  meetingLink String?
+
+  type     String   @default("VENUE_TOUR")
+  status   String   @default("PENDING")   // PENDING | CONFIRMED | COMPLETED | CANCELLED
+  priority String   @default("MEDIUM")    // LOW | MEDIUM | HIGH
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([visitorId])
+  @@index([status])
+  @@map("venue_appointments")
+}
+
+// ─── Follow: user follows another user (e.g. follow exhibitor) ─────────────────
+model Follow {
+  id           String   @id @default(uuid()) @db.Uuid
+  followerId   String   @db.Uuid
+  followingId  String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  follower  User @relation("UserAsFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserAsFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+// ─── Network: user connections (LinkedIn-style) ───────────────────────────────
+model Connection {
+  id          String           @id @default(uuid()) @db.Uuid
+  requesterId String           @db.Uuid
+  receiverId  String           @db.Uuid
+  status      ConnectionStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  requester User @relation("ConnectionRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver  User @relation("ConnectionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, receiverId])
+  @@index([requesterId])
+  @@index([receiverId])
+  @@index([status])
+  @@map("connections")
+}
+
+// ─── Messaging: conversations and messages ────────────────────────────────────
+model Conversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+  summaries    ConversationSummary[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @db.Uuid
+  conversationId String    @db.Uuid
+  lastReadAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conversationId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  senderId       String      @db.Uuid
+  conversationId String      @db.Uuid
+  content        String
+  type           MessageType @default(TEXT)
+  isRead         Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model ConversationSummary {
+  id             String    @id @default(uuid()) @db.Uuid
+  conversationId String    @db.Uuid
+  userId         String    @db.Uuid
+  lastMessage    String    @default("")
+  lastMessageAt  DateTime?
+  unreadCount    Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([conversationId])
+  @@map("conversation_summaries")
+}
+
+// ─── Location Management (admin) ─────────────────────────────────────────────
+model Country {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String   @unique
+  code         String   @unique
+  flag         String?
+  flagPublicId String?
+  currency     String   @default("USD")
+  timezone     String   @default("UTC")
+  isActive     Boolean  @default(true)
+  isPermitted  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  cities       City[]
+  @@index([isActive])
+  @@index([isPermitted])
+  @@map("countries")
+}
+model ExhibitorSuggestion {
+  id           String   @id @default(uuid()) @db.Uuid
+  visitorId    String   @db.Uuid   // ✅ FIXED
+  exhibitorId  String   @db.Uuid   // ✅ FIXED
+  note         String?
+  status       String   @default("PENDING")
+  sentAt       DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  visitor      User     @relation("VisitorSuggestions", fields: [visitorId], references: [id], onDelete: Cascade)
+  exhibitor    User     @relation("ExhibitorSuggestions", fields: [exhibitorId], references: [id], onDelete: Cascade)
+
+  @@unique([visitorId, exhibitorId])
+  @@index([visitorId])
+  @@index([exhibitorId])
+  @@index([status])
+  @@map("exhibitor_suggestions")
+}
+model City {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  countryId     String   @db.Uuid
+  country       Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  latitude      Float?
+  longitude     Float?
+  timezone      String   @default("UTC")
+  image         String?
+  imagePublicId String?
+  isActive      Boolean  @default(true)
+  isPermitted   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([name, countryId])
+  @@index([countryId])
+  @@index([isActive])
+  @@index([isPermitted])
+  @@map("cities")
+}
+
+// ─── Admin CMS & settings (key-value + structured content) ───────────────────
+model AdminAppSetting {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_app_settings")
+}
+
+model AdminContent {
+  id        String           @id @default(uuid()) @db.Uuid
+  type      AdminContentType
+  title     String?
+  slug      String?
+  body      String?          @db.Text
+  extras    Json?
+  published Boolean          @default(false)
+  sortOrder Int              @default(0)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([type])
+  @@index([published])
+  @@map("admin_content")
+}
+
+model AdminSubscriptionPlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?  @db.Text
+  price       Float
+  currency    String   @default("USD")
+  interval    String   @default("MONTHLY")
+  features    Json?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions AdminUserSubscription[]
+
+  @@map("admin_subscription_plans")
+}
+
+model AdminUserSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String   @db.Uuid
+  plan      AdminSubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status    String   @default("ACTIVE")
+  startedAt DateTime @default(now())
+  renewsAt  DateTime?
+  autoRenew Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+  @@map("admin_user_subscriptions")
+}

@@ -1,0 +1,30 @@
+import { Request, Response } from "express";
+import { sendOne, sendError } from "../../../lib/admin-response";
+import * as service from "./analytics.service";
+
+export async function eventsGrowth(req: Request, res: Response) {
+  try {
+    const data = await service.getEventsGrowth();
+    return sendOne(res, data);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to get events growth", e?.message);
+  }
+}
+
+export async function userGrowth(req: Request, res: Response) {
+  try {
+    const data = await service.getUserGrowth();
+    return sendOne(res, data);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to get user growth", e?.message);
+  }
+}
+
+export async function revenue(req: Request, res: Response) {
+  try {
+    const data = await service.getRevenue();
+    return sendOne(res, data);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to get revenue", e?.message);
+  }
+}
