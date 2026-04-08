@@ -4,11 +4,12 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 
 ## Setup
 
-1. **Install dependencies** (from monorepo root, recommended)
+1. **Install dependencies** (from this folder)
+
    ```bash
-   pnpm install
+   cd biz-backend
+   npm install
    ```
-   Or from this folder: `cd biz-backend && pnpm install`
 
 2. **Environment**
    - Copy `.env.example` to `.env`
@@ -19,19 +20,22 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
    - Or use migrations: `npx prisma migrate dev --name init`
 
 4. **Generate Prisma Client**
+
    ```bash
    npx prisma generate
    ```
 
 5. **Run**
+
    ```bash
    npm run dev
    ```
+
    API: `http://localhost:4000` (or `PORT` from env).
 
 ## DB: PostgreSQL (Neon)
 
-- Schema: `biz-backend/prisma/schema.prisma`
+- Schema: `prisma/schema.prisma`
 - All IDs are `uuid()`; no MongoDB ObjectId.
 - OTP is stored in Prisma model `Otp` (table `otps`), not Mongoose.
 
@@ -45,16 +49,14 @@ npm run test:watch
 npm run test:coverage
 ```
 
-In a pnpm monorepo, run `pnpm prisma generate` from **this folder** after install so `@prisma/client` matches this schema (the hoisted client may otherwise reflect another workspace).
-
 ## Commands
 
 | Command | Description |
 |--------|-------------|
-| `pnpm dev` | Start dev server (ts-node) |
-| `pnpm build` | Compile TypeScript |
-| `pnpm start` | Run compiled app |
+| `npm run dev` | Start dev server (ts-node) |
+| `npm run build` | Compile TypeScript |
+| `npm start` | Run compiled app |
 | `npm test` | Jest + Supertest (no real DB) |
-| `pnpm db:generate` | Prisma generate |
-| `pnpm db:push` | Push schema to DB (no migration history) |
-| `pnpm db:migrate` | Run migrations |
+| `npm run db:generate` | Prisma generate |
+| `npm run db:push` | Push schema to DB (no migration history) |
+| `npm run db:migrate` | Run migrations |
