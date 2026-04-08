@@ -14,6 +14,11 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 2. **Environment**
    - Copy `.env.example` to `.env`
    - Set `DATABASE_URL` to your Neon PostgreSQL connection string (see `.env.example`).
+   - **CORS (required for Vercel + browser login):** set `CORS_ORIGIN` to a comma-separated list of allowed web origins (no spaces). Example for production + local dev:
+
+     `CORS_ORIGIN=https://your-app.vercel.app,http://localhost:3000`
+
+     The API uses `credentials: true`, so `*` is not valid for browser requests; your frontend’s exact `https://…` origin must be listed.
 
 3. **Database**
    - Create tables (no migrations): `npx prisma db push`
