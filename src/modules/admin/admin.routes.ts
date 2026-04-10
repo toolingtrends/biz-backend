@@ -13,6 +13,7 @@ import {
   adminVerifyEventHandler,
 } from "./admin.controller";
 import { createEventAdminHandler } from "../events/events.controller";
+import { getEventImportJobHandler, postEventImportHandler } from "./event-import/event-import.controller";
 
 import organizersRoutes from "./organizers/organizers.routes";
 import exhibitorsRoutes from "./exhibitors/exhibitors.routes";
@@ -47,9 +48,22 @@ const verifyBadgeUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+const eventImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
 // ─── Events (existing) ─────────────────────────────────────────────────────
 router.get("/events/stats", requireAdmin, adminGetEventStatsHandler);
 router.get("/events", requireAdmin, adminGetEventsHandler);
+/** Bulk import — must be registered before `/events/:id` so `import` is not captured as :id */
+router.post(
+  "/events/import",
+  requireAdmin,
+  eventImportUpload.single("file"),
+  postEventImportHandler,
+);
+router.get("/events/import/:jobId", requireAdmin, getEventImportJobHandler);
 router.post(
   "/events/:id/verify",
   requireAdmin,

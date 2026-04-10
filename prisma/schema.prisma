@@ -1316,3 +1316,28 @@ model AdminUserSubscription {
   @@index([status])
   @@map("admin_user_subscriptions")
 }
+
+/// Admin bulk event import from CSV/TSV/XLSX (processed asynchronously on the API server).
+model EventImportJob {
+  id              String   @id @default(uuid()) @db.Uuid
+  status          String   @default("PENDING")
+  fileName        String?
+  totalRows       Int      @default(0)
+  processedRows   Int      @default(0)
+  successCount    Int      @default(0)
+  errorCount      Int      @default(0)
+  /// Parsed sheet rows (array of objects keyed by header names).
+  rowsPayload     Json?
+  /// Per-row errors: [{ row: number, message: string }]
+  errors          Json?
+  /// Successful imports: [{ title: string, organizerEmail: string }]
+  importedSummary Json?
+  createdByAdminId String?
+  createdByAdminRole String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("event_import_jobs")
+}
