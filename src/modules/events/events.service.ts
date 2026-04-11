@@ -447,19 +447,35 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
 
   const slug = event.slug || generateSlug(event.title);
 
-  // Map venue to frontend shape (event-dashboard expects company, bio, location, website, amenities)
+  // Map venue to frontend shape: keep address/geo fields for public event pages + dashboard extras.
+  // (Previously we only sent `company`/`bio`/joined `location`, so `venueAddress` was missing and UIs showed "Location TBA".)
   const venue = event.venue
     ? {
         id: event.venue.id,
+        venueName: event.venue.venueName,
+        venueAddress: event.venue.venueAddress,
+        venueCity: event.venue.venueCity,
+        venueState: event.venue.venueState,
+        venueCountry: event.venue.venueCountry,
+        venueZipCode: event.venue.venueZipCode,
+        venuePhone: event.venue.venuePhone,
+        venueEmail: event.venue.venueEmail,
+        venueWebsite: event.venue.venueWebsite,
+        venueDescription: event.venue.venueDescription,
+        organizationName: event.venue.organizationName,
+        latitude: event.venue.latitude,
+        longitude: event.venue.longitude,
+        amenities: event.venue.amenities ?? [],
+        venueImages: event.venue.venueImages ?? [],
         company: event.venue.company ?? event.venue.organizationName ?? event.venue.venueName ?? "",
         bio: event.venue.bio ?? event.venue.venueDescription ?? "",
         location:
           ([event.venue.venueAddress, event.venue.venueCity, event.venue.venueState, event.venue.venueCountry]
             .filter(Boolean)
             .join(", ") ||
-            event.venue.location) ?? "",
+            event.venue.location) ??
+          "",
         website: event.venue.venueWebsite ?? event.venue.website ?? "",
-        amenities: event.venue.amenities ?? [],
       }
     : null;
 
