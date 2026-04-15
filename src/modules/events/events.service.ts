@@ -169,11 +169,6 @@ export async function listEvents(params: ListEventsParams) {
             },
           },
         },
-        reviews: {
-          select: {
-            rating: true,
-          },
-        },
       },
       orderBy,
       skip,
@@ -183,14 +178,6 @@ export async function listEvents(params: ListEventsParams) {
   ]);
 
   const transformedEvents = events.map((event: any) => {
-    const avgRating =
-      event.reviews.length > 0
-        ? event.reviews.reduce(
-            (sum: number, review: { rating: number | null }) => sum + (review.rating ?? 0),
-            0,
-          ) / event.reviews.length
-        : 0;
-
     const cheapestTicket = event.ticketTypes[0]?.price || 0;
 
     return {
@@ -241,7 +228,7 @@ export async function listEvents(params: ListEventsParams) {
             avatar: se.user.avatar ?? null,
           }))
         : [],
-      averageRating: avgRating,
+      averageRating: Number(event.averageRating ?? 0),
       cheapestTicket,
       currency: event.currency,
       images: event.images,

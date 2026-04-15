@@ -50,6 +50,9 @@ export function createApp(): express.Application {
         return callback(null, false);
       },
       credentials: true,
+      /** Ensures preflight for `Authorization` + multipart + internal proxy header always succeeds. */
+      allowedHeaders: ["Authorization", "Content-Type", "X-Internal-Secret", "X-Requested-With"],
+      methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     })
   );
   app.use(compression());
