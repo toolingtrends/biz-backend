@@ -85,6 +85,11 @@ export class AuthService {
         return null;
       }
 
+      await prisma.subAdmin.update({
+        where: { id: subAdmin.id },
+        data: { lastLogin: new Date() },
+      });
+
       const payload: AuthTokenPayload = {
         sub: subAdmin.id,
         email: subAdmin.email,

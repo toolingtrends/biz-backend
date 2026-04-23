@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sendList, sendOne, sendError } from "../../../lib/admin-response";
 import * as service from "./organizers.service";
 import * as promoAdmin from "../promotions/promotions-admin.service";
+import prisma from "../../../config/prisma";
 
 export async function list(req: Request, res: Response) {
   try {
@@ -25,6 +26,21 @@ export async function getById(req: Request, res: Response) {
 export async function create(req: Request, res: Response) {
   try {
     const item = await service.createOrganizer(req.body ?? {});
+    if (req.auth?.domain === "ADMIN") {
+      await prisma.adminLog.create({
+        data: {
+          adminId: req.auth.sub,
+          adminType: req.auth.role === "SUB_ADMIN" ? "SUB_ADMIN" : "SUPER_ADMIN",
+          action: "ADMIN_ORGANIZER_CREATED",
+          resource: "ORGANIZER",
+          resourceId: (item as any)?.id ?? null,
+          details: {
+            email: (item as any)?.email ?? null,
+            name: `${(item as any)?.firstName ?? ""} ${(item as any)?.lastName ?? ""}`.trim(),
+          },
+        },
+      });
+    }
     return res.status(201).json({ success: true, data: item });
   } catch (e: any) {
     if (e?.message?.includes("already exists")) return sendError(res, 400, e.message);

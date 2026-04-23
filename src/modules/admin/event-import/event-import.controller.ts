@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { createImportJob, getImportJob } from "./event-import.service";
+import prisma from "../../../config/prisma";
 
 export async function postEventImportHandler(req: Request, res: Response) {
   try {
@@ -21,6 +22,20 @@ export async function postEventImportHandler(req: Request, res: Response) {
       fileName: file.originalname || "import.xlsx",
       createdByAdminId: auth.sub,
       createdByAdminRole: role,
+    });
+
+    await prisma.adminLog.create({
+      data: {
+        adminId: auth.sub,
+        adminType: role,
+        action: "ADMIN_EVENT_BULK_IMPORT_STARTED",
+        resource: "EVENT_IMPORT",
+        resourceId: jobId,
+        details: {
+          fileName: file.originalname || "import.xlsx",
+          size: file.size ?? 0,
+        },
+      },
     });
 
     return res.status(202).json({

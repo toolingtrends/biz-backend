@@ -128,6 +128,17 @@ export async function createOrganizer(body: Record<string, unknown>) {
       lastName: String(body.lastName ?? "").trim() || "",
       phone: body.phone != null ? String(body.phone) : null,
       company: body.company != null ? String(body.company) : null,
+      organizationName:
+        body.organizationName != null ? String(body.organizationName) : body.company != null ? String(body.company) : null,
+      description: body.description != null ? String(body.description) : null,
+      headquarters: body.headquarters != null ? String(body.headquarters) : null,
+      founded: body.founded != null ? String(body.founded) : null,
+      teamSize: body.teamSize != null ? String(body.teamSize) : null,
+      specialties: Array.isArray(body.specialties) ? body.specialties.map((s) => String(s)) : [],
+      businessEmail: body.businessEmail != null ? String(body.businessEmail) : null,
+      businessPhone: body.businessPhone != null ? String(body.businessPhone) : null,
+      businessAddress: body.businessAddress != null ? String(body.businessAddress) : null,
+      taxId: body.taxId != null ? String(body.taxId) : null,
       isActive: body.isActive !== false,
     },
   });
@@ -137,10 +148,30 @@ export async function createOrganizer(body: Record<string, unknown>) {
 export async function updateOrganizer(id: string, body: Record<string, unknown>) {
   const existing = await prisma.user.findFirst({ where: { id, role: ROLE } });
   if (!existing) return null;
-  const allowed = ["firstName", "lastName", "phone", "company", "isActive", "isVerified", "description", "website"];
+  const allowed = [
+    "firstName",
+    "lastName",
+    "phone",
+    "company",
+    "organizationName",
+    "description",
+    "headquarters",
+    "founded",
+    "teamSize",
+    "businessEmail",
+    "businessPhone",
+    "businessAddress",
+    "taxId",
+    "isActive",
+    "isVerified",
+    "website",
+  ];
   const data: Record<string, unknown> = {};
   for (const k of allowed) {
     if (body[k] !== undefined) data[k] = body[k];
+  }
+  if (body.specialties !== undefined) {
+    data.specialties = Array.isArray(body.specialties) ? body.specialties.map((s) => String(s)) : [];
   }
   if (body.email !== undefined) data.email = String(body.email).trim().toLowerCase();
   await prisma.user.update({ where: { id }, data: data as any });
