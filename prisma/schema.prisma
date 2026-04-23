@@ -515,6 +515,9 @@ model Event {
 
   venueId     String? @db.Uuid
   venue       User?   @relation("EventVenue", fields: [venueId], references: [id])
+  city        String?
+  state       String?
+  country     String?
   isVirtual   Boolean @default(false)
   virtualLink String?
 
@@ -1124,10 +1127,26 @@ model Country {
   isPermitted  Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  states       State[]
   cities       City[]
   @@index([isActive])
   @@index([isPermitted])
   @@map("countries")
+}
+model State {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  countryId   String   @db.Uuid
+  country     Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  isActive    Boolean  @default(true)
+  isPermitted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([name, countryId])
+  @@index([countryId])
+  @@index([isActive])
+  @@index([isPermitted])
+  @@map("states")
 }
 model ExhibitorSuggestion {
   id           String   @id @default(uuid()) @db.Uuid
@@ -1151,6 +1170,7 @@ model ExhibitorSuggestion {
 model City {
   id            String   @id @default(uuid()) @db.Uuid
   name          String
+  state         String
   countryId     String   @db.Uuid
   country       Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
   latitude      Float?

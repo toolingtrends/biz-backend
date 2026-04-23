@@ -3,6 +3,60 @@ import prisma from "../config/prisma";
 
 const router = Router();
 
+async function syncLocationMasterFromVenue(input: { country?: string; state?: string; city?: string }) {
+  const countryName = String(input.country ?? "").trim();
+  const stateName = String(input.state ?? "").trim();
+  const cityName = String(input.city ?? "").trim();
+  if (!countryName) return;
+
+  const normalizedCode = countryName.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "UNK";
+  const country = await prisma.country.upsert({
+    where: { name: countryName },
+    update: {},
+    create: {
+      name: countryName,
+      code: normalizedCode,
+      timezone: "UTC",
+      currency: "USD",
+      isActive: true,
+      isPermitted: false,
+    },
+  });
+  if (stateName) {
+    await (prisma as any).state.upsert({
+      where: { name_countryId: { name: stateName, countryId: country.id } },
+      update: {},
+      create: {
+        name: stateName,
+        countryId: country.id,
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+
+  if (!cityName || !stateName) return;
+
+  const existingCity = await prisma.city.findFirst({
+    where: {
+      countryId: country.id,
+      name: { equals: cityName, mode: "insensitive" },
+    },
+  });
+  if (!existingCity) {
+    await prisma.city.create({
+      data: {
+        name: cityName,
+        state: stateName,
+        countryId: country.id,
+        timezone: country.timezone || "UTC",
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+}
+
 // GET /api/venue-manager/:id – venue manager profile + basic stats
 router.get("/venue-manager/:id", async (req, res) => {
   try {
@@ -225,6 +279,12 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
       },
     });
 
+    await syncLocationMasterFromVenue({
+      country: venueCountry,
+      state: venueState,
+      city: venueCity,
+    });
+
     // Meeting spaces are not yet modeled in backend schema; echo back the
     // provided data so frontend UI can still show them transiently.
     const normalizedMeetingSpaces = Array.isArray(meetingSpaces)
@@ -373,6 +433,12 @@ router.put("/venue-manager/:id", async (req, res) => {
           basePrice !== undefined ? parseFloat(String(basePrice)) : undefined,
         venueCurrency: currency ?? undefined,
       },
+    });
+
+    await syncLocationMasterFromVenue({
+      country,
+      state,
+      city,
     });
 
     const savedMeetingSpaces = (updatedVenue.meetingSpaces as any[] | null) ?? [];

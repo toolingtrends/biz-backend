@@ -4,6 +4,64 @@ import type { UserRole } from "@prisma/client";
 
 const ROLE: UserRole = "VENUE_MANAGER";
 
+async function syncLocationMasterFromVenue(input: {
+  venueCountry?: unknown;
+  venueState?: unknown;
+  venueCity?: unknown;
+}) {
+  const countryName = String(input.venueCountry ?? "").trim();
+  const stateName = String(input.venueState ?? "").trim();
+  const cityName = String(input.venueCity ?? "").trim();
+  if (!countryName) return;
+
+  const normalizedCode = countryName.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "UNK";
+  const country = await prisma.country.upsert({
+    where: { name: countryName },
+    update: {},
+    create: {
+      name: countryName,
+      code: normalizedCode,
+      timezone: "UTC",
+      currency: "USD",
+      isActive: true,
+      isPermitted: false,
+    },
+  });
+  if (stateName) {
+    await (prisma as any).state.upsert({
+      where: { name_countryId: { name: stateName, countryId: country.id } },
+      update: {},
+      create: {
+        name: stateName,
+        countryId: country.id,
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+
+  if (!cityName || !stateName) return;
+
+  const city = await prisma.city.findFirst({
+    where: {
+      countryId: country.id,
+      name: { equals: cityName, mode: "insensitive" },
+    },
+  });
+  if (!city) {
+    await prisma.city.create({
+      data: {
+        name: cityName,
+        state: stateName,
+        countryId: country.id,
+        timezone: country.timezone || "UTC",
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+}
+
 export async function listVenues(query: Record<string, unknown>) {
   const { page, limit, search, skip, sort, order } = parseListQuery(query);
   const where: any = { role: ROLE };
@@ -34,9 +92,11 @@ export async function listVenues(query: Record<string, unknown>) {
         venueCountry: true,
         venueAddress: true,
         maxCapacity: true,
+        totalEvents: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        _count: { select: { venueEvents: true } },
       },
     }),
     prisma.user.count({ where }),
@@ -54,6 +114,7 @@ export async function listVenues(query: Record<string, unknown>) {
     venueCountry: u.venueCountry,
     venueAddress: u.venueAddress,
     maxCapacity: u.maxCapacity,
+    totalEvents: (u._count?.venueEvents ?? 0) || (u as any).totalEvents || 0,
     isActive: u.isActive,
     createdAt: u.createdAt.toISOString(),
     updatedAt: u.updatedAt.toISOString(),
@@ -64,6 +125,24 @@ export async function listVenues(query: Record<string, unknown>) {
 export async function getVenueById(id: string) {
   const user = await prisma.user.findFirst({
     where: { id, role: ROLE },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      venueName: true,
+      venueCity: true,
+      venueState: true,
+      venueCountry: true,
+      venueAddress: true,
+      maxCapacity: true,
+      totalEvents: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { venueEvents: true } },
+    },
   });
   if (!user) return null;
   return {
@@ -79,6 +158,7 @@ export async function getVenueById(id: string) {
     venueCountry: user.venueCountry,
     venueAddress: user.venueAddress,
     maxCapacity: user.maxCapacity,
+    totalEvents: (user._count?.venueEvents ?? 0) || (user as any).totalEvents || 0,
     isActive: user.isActive,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
@@ -107,6 +187,11 @@ export async function createVenue(body: Record<string, unknown>) {
       isActive: body.isActive !== false,
     },
   });
+  await syncLocationMasterFromVenue({
+    venueCountry: body.venueCountry,
+    venueState: body.venueState,
+    venueCity: body.venueCity,
+  });
   return getVenueById(user.id);
 }
 
@@ -123,6 +208,11 @@ export async function updateVenue(id: string, body: Record<string, unknown>) {
   }
   if (body.email !== undefined) data.email = String(body.email).trim().toLowerCase();
   await prisma.user.update({ where: { id }, data: data as any });
+  await syncLocationMasterFromVenue({
+    venueCountry: data.venueCountry,
+    venueState: data.venueState,
+    venueCity: data.venueCity,
+  });
   return getVenueById(id);
 }
 

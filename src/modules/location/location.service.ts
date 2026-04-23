@@ -49,6 +49,7 @@ export async function listPublicCountries() {
         select: {
           id: true,
           name: true,
+          state: true,
           image: true,
         },
       },
@@ -75,6 +76,7 @@ async function countEventsForCityVenue(cityName: string): Promise<number> {
 export type PublicCityBrowseRow = {
   id: string;
   name: string;
+  state: string;
   image: string | null;
   countryId: string;
   isPermitted: boolean;
@@ -102,6 +104,7 @@ export async function listPublicCities(countryId?: string): Promise<PublicCityBr
   return rows.map((row, i) => ({
     id: row.id,
     name: row.name,
+    state: row.state,
     image: row.image,
     countryId: row.countryId,
     isPermitted: row.isPermitted,

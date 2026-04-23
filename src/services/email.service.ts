@@ -244,3 +244,42 @@ export async function sendMarketingEmail(params: {
   });
 }
 
+export async function sendEventListingThankYouEmail(params: {
+  toEmail: string;
+  firstName: string;
+  eventTitles: string[];
+  setPasswordUrl?: string;
+}): Promise<void> {
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    throw new Error("Email credentials are not configured");
+  }
+
+  const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
+  const listHtml = eventTitles
+    .map((t) => `<li style="margin:6px 0;">${String(t).replace(/</g, "&lt;")}</li>`)
+    .join("");
+
+  await transporter.sendMail({
+    from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    to: toEmail,
+    subject: `Event listing update (${eventTitles.length})`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+        <h2 style="color: #2563eb;">Thank you</h2>
+        <p>Hello ${firstName || "there"},</p>
+        <p>Your event listing has been processed. Events:</p>
+        <ul style="padding-left: 20px;">${listHtml}</ul>
+        ${
+          setPasswordUrl
+            ? `<p style="margin: 24px 0;">
+          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Set password</a>
+        </p>
+        <p style="font-size: 13px; color: #6b7280;">Use this email <strong>${toEmail}</strong> to sign in after setting your password.</p>`
+            : ""
+        }
+        <p>Best regards,<br/>The BizTradeFairs Team</p>
+      </div>
+    `,
+  });
+}
+

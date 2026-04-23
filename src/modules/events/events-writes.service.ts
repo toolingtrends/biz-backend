@@ -46,6 +46,59 @@ const VALID_SPACE_TYPES = [
   "FOUR_SIDE_OPEN", "MEZZANINE", "ADDITIONAL_POWER", "COMPRESSED_AIR", "CUSTOM",
 ];
 
+async function syncLocationMasterFromEvent(input: { country?: unknown; state?: unknown; city?: unknown }) {
+  const countryName = String(input.country ?? "").trim();
+  const stateName = String(input.state ?? "").trim();
+  const cityName = String(input.city ?? "").trim();
+  if (!countryName) return;
+
+  const normalizedCode = countryName.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "UNK";
+  const country = await prisma.country.upsert({
+    where: { name: countryName },
+    update: {},
+    create: {
+      name: countryName,
+      code: normalizedCode,
+      timezone: "UTC",
+      currency: "USD",
+      isActive: true,
+      isPermitted: false,
+    },
+  });
+  if (stateName) {
+    await (prisma as any).state.upsert({
+      where: { name_countryId: { name: stateName, countryId: country.id } },
+      update: {},
+      create: {
+        name: stateName,
+        countryId: country.id,
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+
+  if (!cityName || !stateName) return;
+  const existingCity = await prisma.city.findFirst({
+    where: {
+      countryId: country.id,
+      name: { equals: cityName, mode: "insensitive" },
+    },
+  });
+  if (!existingCity) {
+    await prisma.city.create({
+      data: {
+        name: cityName,
+        state: stateName,
+        countryId: country.id,
+        timezone: country.timezone || "UTC",
+        isActive: true,
+        isPermitted: false,
+      },
+    });
+  }
+}
+
 /**
  * Parses human-readable lines such as:
  * `Student: ₹500 | General Admission: ₹1000 | VIP: ₹5000`
@@ -245,10 +298,9 @@ export interface CreateEventAdminParams {
 }
 
 function resolveEventStatusForImport(body: Record<string, any>): EventStatus {
-  const raw = String(body.status || body.eventStatus || "PUBLISHED").toUpperCase().trim();
-  const allowed: EventStatus[] = ["DRAFT", "PENDING_APPROVAL", "PUBLISHED", "CANCELLED", "COMPLETED"];
-  if (allowed.includes(raw as EventStatus)) return raw as EventStatus;
-  return "PUBLISHED";
+  const raw = String(body.status || body.eventStatus || "PENDING_APPROVAL").toUpperCase().trim();
+  if (raw === "DRAFT") return "DRAFT";
+  return "PENDING_APPROVAL";
 }
 
 export async function createEventAdmin(params: CreateEventAdminParams) {
@@ -292,6 +344,11 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
   }
 
   let venueId: string | null = null;
+  let selectedVenueLocation: { city: string | null; state: string | null; country: string | null } = {
+    city: null,
+    state: null,
+    country: null,
+  };
   if (body.venueId) {
     const existingVenue = await prisma.user.findFirst({
       where: {
@@ -305,6 +362,11 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     }
 
     venueId = existingVenue.id;
+    selectedVenueLocation = {
+      city: existingVenue.venueCity ?? null,
+      state: existingVenue.venueState ?? null,
+      country: existingVenue.venueCountry ?? null,
+    };
   } else if (body.venueName || body.city || body.address || body.venueEmail) {
     // Do not auto-create venues anymore. Require explicit venueId selection.
     return { error: "VENUE_REQUIRED" as const };
@@ -396,7 +458,7 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     status:
       body.importSource === "spreadsheet"
         ? resolveEventStatusForImport(body)
-        : ("PUBLISHED" as EventStatus),
+        : ("PENDING_APPROVAL" as EventStatus),
     category: parseCategory(body.categories || body.category || body.eventCategories),
     tags: Array.isArray(body.tags) ? body.tags : [],
     eventType: body.eventType ? [body.eventType].flat() : [],
@@ -408,6 +470,9 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     isVirtual: !!body.isVirtual,
     virtualLink: body.virtualLink || null,
     venueId,
+    city: body.city || selectedVenueLocation.city || null,
+    state: body.state || selectedVenueLocation.state || null,
+    country: body.country || selectedVenueLocation.country || null,
     maxAttendees: body.maxAttendees ?? body.maxCapacity ?? null,
     currentAttendees: 0,
     currency: body.currency || "USD",
@@ -619,6 +684,12 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
     },
   });
 
+  await syncLocationMasterFromEvent({
+    country: eventData.country,
+    state: eventData.state,
+    city: eventData.city,
+  });
+
   await prisma.adminLog.create({
     data: {
       adminId,
@@ -630,6 +701,7 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
         title: createdEvent.title,
         organizerId: createdEvent.organizerId,
         venueId: createdEvent.venueId,
+        importSource: body.importSource === "spreadsheet" ? "spreadsheet" : "manual",
         speakerCount: createdEvent.speakerSessions?.length ?? 0,
         exhibitorCount: createdEvent.exhibitorBooths?.length ?? 0,
         spaceCount: createdEvent.exhibitionSpaces?.length ?? 0,

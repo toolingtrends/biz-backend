@@ -2,6 +2,8 @@ import prisma from "../../config/prisma";
 import { EventStatus } from "@prisma/client";
 import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import { uploadImage } from "../../services/cloudinary.service";
+import { randomBytes } from "crypto";
+import { FRONTEND_BASE, sendEventListingThankYouEmail } from "../../services/email.service";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -736,5 +738,134 @@ export async function adminListEventCategories(): Promise<{ id: string; name: st
     eventCount: countByCategory[name],
     isActive: true,
   }));
+}
+
+type EventMailListRow = {
+  source: "SUB_ADMIN" | "BULK_UPLOAD";
+  eventTitle: string;
+  organizerEmail: string;
+  organizerName: string;
+  createdAt: string;
+};
+
+function asObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+export async function adminGetEventMailCandidates(): Promise<EventMailListRow[]> {
+  const [subAdminLogs, importJobs] = await Promise.all([
+    prisma.adminLog.findMany({
+      where: {
+        action: "EVENT_CREATED",
+        adminType: "SUB_ADMIN",
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        createdAt: true,
+        details: true,
+      },
+      take: 300,
+    }),
+    prisma.eventImportJob.findMany({
+      where: { status: "COMPLETED" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        createdAt: true,
+        importedSummary: true,
+      },
+      take: 120,
+    }),
+  ]);
+
+  const organizerIds = new Set<string>();
+  for (const row of subAdminLogs) {
+    const d = asObject(row.details);
+    const organizerId = asString(d.organizerId);
+    if (organizerId) organizerIds.add(organizerId);
+  }
+
+  const users = organizerIds.size
+    ? await prisma.user.findMany({
+        where: { id: { in: Array.from(organizerIds) } },
+        select: { id: true, email: true, firstName: true, lastName: true },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const out: EventMailListRow[] = [];
+
+  for (const row of subAdminLogs) {
+    const d = asObject(row.details);
+    const title = asString(d.title);
+    const organizerId = asString(d.organizerId);
+    const organizer = organizerId ? userMap.get(organizerId) : null;
+    const email = organizer?.email || "";
+    if (!title || !email) continue;
+    out.push({
+      source: "SUB_ADMIN",
+      eventTitle: title,
+      organizerEmail: email,
+      organizerName: [organizer?.firstName, organizer?.lastName].filter(Boolean).join(" ").trim() || "Organizer",
+      createdAt: row.createdAt.toISOString(),
+    });
+  }
+
+  for (const job of importJobs) {
+    const items = Array.isArray(job.importedSummary) ? (job.importedSummary as unknown[]) : [];
+    for (const item of items) {
+      const row = asObject(item);
+      const title = asString(row.title);
+      const email = asString(row.organizerEmail).toLowerCase();
+      if (!title || !email) continue;
+      out.push({
+        source: "BULK_UPLOAD",
+        eventTitle: title,
+        organizerEmail: email,
+        organizerName: "Organizer",
+        createdAt: job.createdAt.toISOString(),
+      });
+    }
+  }
+
+  return out.slice(0, 500);
+}
+
+export async function adminSendEventListingEmail(params: { organizerEmail: string; eventTitles: string[] }) {
+  const organizerEmail = params.organizerEmail.trim().toLowerCase();
+  const eventTitles = params.eventTitles.map((t) => t.trim()).filter(Boolean);
+  if (!organizerEmail || eventTitles.length === 0) {
+    throw new Error("organizerEmail and eventTitles are required");
+  }
+
+  const organizer = await prisma.user.findFirst({
+    where: { email: organizerEmail, role: "ORGANIZER" },
+    select: { id: true, firstName: true, emailVerified: true },
+  });
+  if (!organizer) {
+    throw new Error("Organizer not found");
+  }
+
+  let setPasswordUrl: string | undefined;
+  if (!organizer.emailVerified) {
+    const resetToken = randomBytes(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await prisma.user.update({
+      where: { id: organizer.id },
+      data: { resetToken, resetTokenExpiry },
+    });
+    const base = FRONTEND_BASE.replace(/\/$/, "");
+    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
+  }
+
+  await sendEventListingThankYouEmail({
+    toEmail: organizerEmail,
+    firstName: organizer.firstName || "there",
+    eventTitles,
+    setPasswordUrl,
+  });
 }
 

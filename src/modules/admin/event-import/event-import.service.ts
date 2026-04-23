@@ -426,7 +426,8 @@ async function runImportJob(jobId: string) {
     },
   });
 
-  await sendThankYouEmails(importedSummary);
+  // Manual dispatch only (from Admin Events -> Mail tab).
+  // await sendThankYouEmails(importedSummary);
 }
 
 async function sendThankYouEmails(
