@@ -38,6 +38,17 @@ export async function subAdminActivity(req: Request, res: Response) {
   }
 }
 
+export async function subAdminActivityById(req: Request, res: Response) {
+  try {
+    const adminId = String(req.params.adminId ?? "").trim();
+    if (!adminId) return sendError(res, 400, "Missing adminId");
+    const data = await service.getSubAdminActivityAnalytics({ adminId });
+    return sendOne(res, data);
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to get sub-admin detail analytics", e?.message);
+  }
+}
+
 export async function myActivity(req: Request, res: Response) {
   try {
     const adminId = req.auth?.sub;
