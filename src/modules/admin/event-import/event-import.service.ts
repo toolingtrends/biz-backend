@@ -114,6 +114,35 @@ function parseBool(v: unknown, defaultTrue = true): boolean {
   return String(v).toLowerCase() === "true";
 }
 
+function parseTimeString(raw: unknown, fallback: string): { hours: number; minutes: number } {
+  const str = String(raw ?? "").trim();
+  if (!str) {
+    const [fh, fm] = fallback.split(":").map((x) => parseInt(x, 10));
+    return { hours: fh, minutes: fm };
+  }
+  const m = str.match(/^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]))?$/);
+  if (!m) {
+    const [fh, fm] = fallback.split(":").map((x) => parseInt(x, 10));
+    return { hours: fh, minutes: fm };
+  }
+  let hours = parseInt(m[1], 10);
+  const minutes = parseInt(m[2], 10);
+  const ampm = m[3]?.toUpperCase();
+  if (ampm === "PM" && hours < 12) hours += 12;
+  if (ampm === "AM" && hours === 12) hours = 0;
+  if (hours > 23 || minutes > 59) {
+    const [fh, fm] = fallback.split(":").map((x) => parseInt(x, 10));
+    return { hours: fh, minutes: fm };
+  }
+  return { hours, minutes };
+}
+
+function combineDateAndTime(date: Date, time: { hours: number; minutes: number }): Date {
+  const d = new Date(date);
+  d.setHours(time.hours, time.minutes, 0, 0);
+  return d;
+}
+
 export function parseWorkbookToRows(buffer: Buffer, _fileName: string): Record<string, unknown>[] {
   const workbook = XLSX.read(buffer, {
     type: "buffer",
@@ -131,46 +160,36 @@ export function parseWorkbookToRows(buffer: Buffer, _fileName: string): Record<s
 }
 
 async function resolveVenueFromRow(row: Record<string, unknown>): Promise<string | null> {
+  const venueIdRaw = row.venueId ? String(row.venueId).trim() : "";
   const venueName = row.venueName ? String(row.venueName).trim() : "";
   const venueEmailRaw = row.venueEmail ? String(row.venueEmail).trim() : "";
-  if (!venueName && !venueEmailRaw) return null;
+  if (!venueIdRaw && !venueName && !venueEmailRaw) return null;
 
-  const fallbackEmail = `venue-${slugBase(venueName || "import")}-${randomBytes(3).toString("hex")}@venue.import.local`;
-  const email = (venueEmailRaw || fallbackEmail).toLowerCase();
+  if (venueIdRaw) {
+    const byId = await prisma.user.findFirst({
+      where: { id: venueIdRaw, role: "VENUE_MANAGER" },
+      select: { id: true },
+    });
+    if (byId?.id) return byId.id;
+  }
 
-  const amenities = parseArray(row.amenities);
-  const venueImages = parseArray(row.venueImages);
-  const venueVideos = parseArray(row.venueVideos);
-  const floorPlans = parseArray(row.floorPlans);
-
-  const { user } = await findOrCreateUser({
-    email,
-    role: "VENUE_MANAGER",
-    firstName: venueName || "Venue",
-    lastName: "",
-    venueName: venueName || "Venue",
-    venueAddress: row.venueAddress ? String(row.venueAddress) : undefined,
-    venueCity: row.venueCity ? String(row.venueCity) : undefined,
-    venueState: row.venueState ? String(row.venueState) : undefined,
-    venueCountry: row.venueCountry ? String(row.venueCountry) : undefined,
-    venueZipCode: row.venueZipCode ? String(row.venueZipCode) : undefined,
-    venuePhone: cleanPhone(row.venuePhone),
-    venueEmail: venueEmailRaw || undefined,
-    venueWebsite: row.venueWebsite ? String(row.venueWebsite) : undefined,
-    maxCapacity: row.maxCapacity ? parseInt(String(row.maxCapacity), 10) : undefined,
-    totalHalls: row.totalHalls ? parseInt(String(row.totalHalls), 10) : undefined,
-    amenities,
-    venueImages,
-    venueVideos,
-    floorPlans,
-    virtualTour: row.virtualTour ? String(row.virtualTour) : undefined,
-    basePrice: row.basePrice ? parseFloat(String(row.basePrice)) : undefined,
-    venueCurrency: row.venueCurrency ? String(row.venueCurrency) : "USD",
-    latitude: row.latitude ? parseFloat(String(row.latitude)) : undefined,
-    longitude: row.longitude ? parseFloat(String(row.longitude)) : undefined,
-  });
-
-  return user.id;
+  if (venueEmailRaw) {
+    const byEmail = await prisma.user.findFirst({
+      where: { role: "VENUE_MANAGER", email: venueEmailRaw.toLowerCase() },
+      select: { id: true },
+    });
+    if (byEmail?.id) return byEmail.id;
+  }
+  if (venueName) {
+    const byName = await prisma.user.findFirst({
+      where: { role: "VENUE_MANAGER", venueName: { equals: venueName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (byName?.id) return byName.id;
+  }
+  throw new Error(
+    `Venue not found for provided identifier${venueName ? ` (name: ${venueName})` : ""}${venueEmailRaw ? ` (email: ${venueEmailRaw})` : ""}`,
+  );
 }
 
 function buildSpeakerSessions(
@@ -214,8 +233,12 @@ async function rowToEventBody(
   const title = String(row.eventTitle ?? "").trim();
   if (!title) throw new Error("eventTitle is required");
 
-  const startDate = parseDateString(row.startDate);
-  const endDate = parseDateString(row.endDate);
+  const baseStartDate = parseDateString(row.startDate);
+  const baseEndDate = parseDateString(row.endDate || row.startDate);
+  const startTime = parseTimeString(row.startTime, "10:00");
+  const endTime = parseTimeString(row.endTime, "18:00");
+  const startDate = combineDateAndTime(baseStartDate, startTime);
+  const endDate = combineDateAndTime(baseEndDate, endTime);
   const registrationStart = row.registrationStart ? parseDateString(row.registrationStart) : startDate;
   const registrationEnd = row.registrationEnd ? parseDateString(row.registrationEnd) : endDate;
 
@@ -236,7 +259,8 @@ async function rowToEventBody(
     if (yt.ok && yt.value) youtubeVideoUrl = yt.value;
   }
 
-  const slug = await ensureUniqueSlug(String(row.slug || row.eventTitle || "event"));
+  const slug = await ensureUniqueSlug(String(row.slug || row.eventSlug || row.eventTitle || "event"));
+  const computedSubtitle = String(row.subTitle ?? row.eventSubTitle ?? row.shortDescription ?? title).trim();
 
   let metaDescription = row.metaDescription ? String(row.metaDescription) : "";
   const countries = parseArray(row.countryNames);
@@ -247,7 +271,8 @@ async function rowToEventBody(
   const body: Record<string, unknown> = {
     title,
     description: String(row.eventDescription ?? ""),
-    shortDescription: row.shortDescription ? String(row.shortDescription) : undefined,
+    shortDescription: row.shortDescription ? String(row.shortDescription) : computedSubtitle,
+    subTitle: computedSubtitle,
     slug,
     edition: row.edition ? String(row.edition) : undefined,
     startDate: startDate.toISOString(),
@@ -257,7 +282,7 @@ async function rowToEventBody(
     timezone: row.timezone ? String(row.timezone) : "UTC",
     categories,
     category: categories,
-    eventType: eventTypes,
+    eventType: eventTypes.length > 0 ? eventTypes : parseArray(row.eventTypes),
     tags,
     status: row.status ? String(row.status) : "PUBLISHED",
     isFeatured: parseBool(row.isFeatured, false),
@@ -274,8 +299,8 @@ async function rowToEventBody(
     brochure: row.brochure ? String(row.brochure) : undefined,
     layoutPlan: row.layoutPlan ? String(row.layoutPlan) : undefined,
     documents,
-    bannerImage: row.bannerImage ? String(row.bannerImage) : undefined,
-    thumbnailImage: row.thumbnailImage ? String(row.thumbnailImage) : undefined,
+    bannerImage: images[0] || undefined,
+    thumbnailImage: images[0] || undefined,
     metaTitle: row.metaTitle ? String(row.metaTitle) : undefined,
     metaDescription: metaDescription || undefined,
     refundPolicy: row.refundPolicy ? String(row.refundPolicy) : undefined,
@@ -342,21 +367,53 @@ async function runImportJob(jobId: string) {
     const rowNum = i + 2;
 
     try {
-      const orgEmail = String(row.organizerEmail ?? "").trim().toLowerCase();
-      if (!orgEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(orgEmail)) {
-        throw new Error("organizerEmail is required and must be valid");
+      const orgEmailRaw = String(row.organizerEmail ?? "").trim().toLowerCase();
+      const orgName = String(row.organizerName ?? "").trim();
+
+      let organizer: { id: string; email: string };
+      let organizerWasNew = false;
+      if (orgEmailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(orgEmailRaw)) {
+        const first = (orgName || "Organizer").split(" ")[0] || "Organizer";
+        const last = (orgName || "Organizer").split(" ").slice(1).join(" ") || "";
+        const out = await findOrCreateUser({
+          email: orgEmailRaw,
+          role: "ORGANIZER",
+          firstName: first,
+          lastName: last,
+        });
+        organizer = { id: out.user.id, email: out.user.email ?? orgEmailRaw };
+        organizerWasNew = out.created;
+      } else if (orgName) {
+        const syntheticEmail = `organizer-${slugBase(orgName)}-${randomBytes(3).toString("hex")}@import.local`;
+        const existingByName = await prisma.user.findFirst({
+          where: {
+            role: "ORGANIZER",
+            OR: [
+              { firstName: { equals: orgName.split(" ")[0] || orgName, mode: "insensitive" } },
+              { organizationName: { equals: orgName, mode: "insensitive" } },
+              { company: { equals: orgName, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true, email: true },
+        });
+        if (existingByName) {
+          organizer = { id: existingByName.id, email: existingByName.email ?? syntheticEmail };
+        } else {
+          const first = orgName.split(" ")[0] || "Organizer";
+          const last = orgName.split(" ").slice(1).join(" ") || "";
+          const out = await findOrCreateUser({
+            email: syntheticEmail,
+            role: "ORGANIZER",
+            firstName: first,
+            lastName: last,
+            company: orgName,
+          });
+          organizer = { id: out.user.id, email: out.user.email ?? syntheticEmail };
+          organizerWasNew = out.created;
+        }
+      } else {
+        throw new Error("Provide organizerEmail or organizerName");
       }
-
-      const orgName = String(row.organizerName ?? "Organizer").trim();
-      const first = orgName.split(" ")[0] || "Organizer";
-      const last = orgName.split(" ").slice(1).join(" ") || "";
-
-      const { user: organizer, created: organizerWasNew } = await findOrCreateUser({
-        email: orgEmail,
-        role: "ORGANIZER",
-        firstName: first,
-        lastName: last,
-      });
 
       let venueId: string | null = null;
       try {
@@ -386,7 +443,7 @@ async function runImportJob(jobId: string) {
       const title = String(row.eventTitle ?? "").trim();
       importedSummary.push({
         title,
-        organizerEmail: orgEmail,
+        organizerEmail: organizer.email,
         organizerWasNew: organizerWasNew,
       });
 

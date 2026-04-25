@@ -3,6 +3,7 @@ import { sendList, sendOne, sendError } from "../../../lib/admin-response";
 import * as service from "./organizers.service";
 import * as promoAdmin from "../promotions/promotions-admin.service";
 import prisma from "../../../config/prisma";
+import { importOrganizersFromFile } from "../bulk-import/bulk-import.service";
 
 export async function list(req: Request, res: Response) {
   try {
@@ -131,5 +132,33 @@ export async function patchOrganizerPromotion(req: Request, res: Response) {
       return sendError(res, 400, "Rejection reason is required");
     }
     return sendError(res, 500, "Failed to update promotion", e?.message);
+  }
+}
+
+export async function importBulk(req: Request, res: Response) {
+  try {
+    const auth = req.auth;
+    if (!auth || auth.domain !== "ADMIN") {
+      return sendError(res, 403, "Admin access required");
+    }
+
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file?.buffer) {
+      return sendError(res, 400, "No file uploaded (use field name: file)");
+    }
+
+    const result = await importOrganizersFromFile({
+      buffer: file.buffer,
+      adminId: auth.sub,
+      adminType: auth.role === "SUB_ADMIN" ? "SUB_ADMIN" : "SUPER_ADMIN",
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+      message: `Imported ${result.successCount} organizer(s) with ${result.errorCount} error(s).`,
+    });
+  } catch (e: any) {
+    return sendError(res, 500, "Failed to import organizers", e?.message);
   }
 }

@@ -7,7 +7,7 @@ import {
   sendOtpEmail,
   sendPasswordResetLinkEmail,
   sendAdminPasswordResetOtpEmail,
-  FRONTEND_BASE,
+  resolveFrontendBase,
 } from "../services/email.service";
 
 const router = Router();
@@ -365,12 +365,11 @@ router.post("/forgot-password", async (req, res) => {
       });
     }
 
-    if (!user.emailVerified) {
-      return res.status(403).json({
-        success: false,
-        error: "Email not verified. Please verify your email first.",
-      });
-    }
+    // NOTE:
+    // Some legacy signup flows allow login but did not persist emailVerified=true
+    // after OTP verification. Do not block password reset for those valid users.
+    // We still keep the same secure reset-token flow and send the link only to
+    // the account email itself.
 
     const maxResetAttempts = 5;
     if ((user.passwordResetAttempts ?? 0) >= maxResetAttempts) {
@@ -386,6 +385,7 @@ router.post("/forgot-password", async (req, res) => {
     await prisma.user.update({
       where: { id: user.id },
       data: {
+        emailVerified: true,
         resetToken,
         resetTokenExpiry,
         loginAttempts: 0,
@@ -393,7 +393,18 @@ router.post("/forgot-password", async (req, res) => {
       },
     });
 
-    const base = FRONTEND_BASE.replace(/\/$/, "");
+    const headerOrigin =
+      (typeof req.headers.origin === "string" ? req.headers.origin : undefined) ||
+      (typeof req.headers.referer === "string" ? req.headers.referer : undefined);
+    let parsedOrigin: string | undefined;
+    if (headerOrigin) {
+      try {
+        parsedOrigin = new URL(headerOrigin).origin;
+      } catch {
+        parsedOrigin = undefined;
+      }
+    }
+    const base = resolveFrontendBase(parsedOrigin).replace(/\/$/, "");
     const encodedEmail = encodeURIComponent(emailLower);
     const resetUrl = `${base}/reset-password?token=${resetToken}&email=${encodedEmail}`;
     const userRole = ROLE_DISPLAY[user.role] || user.role;
@@ -626,6 +637,7 @@ router.post("/reset-password", async (req, res) => {
       where: { id: user.id },
       data: {
         password: hashedPassword,
+        emailVerified: true,
         resetToken: null,
         resetTokenExpiry: null,
         loginAttempts: 0,
@@ -636,7 +648,7 @@ router.post("/reset-password", async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Password has been reset successfully. You can now login with your new password.",
+      message: "Email verified and password set successfully. You can now login with your new password.",
     });
   } catch (err) {
     // eslint-disable-next-line no-console

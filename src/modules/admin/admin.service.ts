@@ -3,7 +3,7 @@ import { EventStatus } from "@prisma/client";
 import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import { uploadImage } from "../../services/cloudinary.service";
 import { randomBytes } from "crypto";
-import { FRONTEND_BASE, sendEventListingThankYouEmail } from "../../services/email.service";
+import { resolveFrontendBase, sendEventListingThankYouEmail } from "../../services/email.service";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -850,6 +850,7 @@ export async function adminSendEventListingEmail(params: { organizerEmail: strin
   }
 
   let setPasswordUrl: string | undefined;
+  // Requirement: show "Set Password" only when email is not verified.
   if (!organizer.emailVerified) {
     const resetToken = randomBytes(32).toString("hex");
     const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -857,7 +858,7 @@ export async function adminSendEventListingEmail(params: { organizerEmail: strin
       where: { id: organizer.id },
       data: { resetToken, resetTokenExpiry },
     });
-    const base = FRONTEND_BASE.replace(/\/$/, "");
+    const base = resolveFrontendBase().replace(/\/$/, "");
     setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
   }
 

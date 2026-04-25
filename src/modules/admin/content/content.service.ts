@@ -4,6 +4,7 @@ import prisma from "../../../config/prisma";
 const bannerSelect = {
   id: true,
   title: true,
+  body: true,
   published: true,
   sortOrder: true,
   extras: true,
@@ -14,6 +15,7 @@ const bannerSelect = {
 export function mapBannerRow(row: {
   id: string;
   title: string | null;
+  body: string | null;
   published: boolean;
   sortOrder: number;
   extras: Prisma.JsonValue | null;
@@ -37,6 +39,7 @@ export function mapBannerRow(row: {
   return {
     id: row.id,
     title: row.title ?? "Banner",
+    description: row.body ?? "",
     imageUrl,
     publicId,
     page,
@@ -77,6 +80,7 @@ export async function listBannersPublic(params: { page?: string; position?: stri
 
 export async function createBanner(input: {
   title: string;
+  description?: string;
   page: string;
   position: string;
   imageUrl: string;
@@ -99,6 +103,7 @@ export async function createBanner(input: {
     data: {
       type: "BANNER",
       title: input.title,
+      body: input.description?.trim() || null,
       published: input.isActive !== false,
       extras: extras as Prisma.InputJsonValue,
     },
@@ -111,6 +116,7 @@ export async function patchBanner(
   id: string,
   patch: Partial<{
     title: string;
+    description: string;
     isActive: boolean;
     page: string;
     position: string;
@@ -138,6 +144,7 @@ export async function patchBanner(
     where: { id },
     data: {
       title: patch.title !== undefined ? patch.title : undefined,
+      body: patch.description !== undefined ? patch.description.trim() || null : undefined,
       published: patch.isActive !== undefined ? patch.isActive : undefined,
       extras: nextExtras as Prisma.InputJsonValue,
     },

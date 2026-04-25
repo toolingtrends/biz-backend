@@ -111,8 +111,28 @@ export async function sendVerificationEmail(email: string, otp: string): Promise
   });
 }
 
-const FRONTEND_BASE =
-  process.env.FRONTEND_URL || process.env.APP_PUBLIC_URL || "http://localhost:3000";
+function parseFrontendBases(): string[] {
+  const raw =
+    process.env.FRONTEND_URL?.trim() ||
+    process.env.APP_PUBLIC_URL?.trim() ||
+    "http://localhost:3000";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/\/$/, ""));
+}
+
+export function resolveFrontendBase(preferredOrigin?: string): string {
+  const bases = parseFrontendBases();
+  if (preferredOrigin) {
+    const normalized = preferredOrigin.replace(/\/$/, "");
+    if (bases.includes(normalized)) return normalized;
+  }
+  return bases[0] || "http://localhost:3000";
+}
+
+const FRONTEND_BASE = resolveFrontendBase();
 
 export async function sendPasswordResetLinkEmail(params: {
   toEmail: string;
@@ -195,7 +215,12 @@ export async function sendEventImportThankYouEmail(params: {
 
   const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
   const listHtml = eventTitles
-    .map((t) => `<li style="margin:6px 0;">${String(t).replace(/</g, "&lt;")}</li>`)
+    .map(
+      (t) =>
+        `<li style="margin: 8px 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">${String(
+          t
+        ).replace(/</g, "&lt;")}</li>`
+    )
     .join("");
 
   await transporter.sendMail({
@@ -203,21 +228,31 @@ export async function sendEventImportThankYouEmail(params: {
     to: toEmail,
     subject: `Your events were imported (${eventTitles.length})`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #2563eb;">Thank you</h2>
-        <p>Hello ${firstName || "there"},</p>
-        <p>The following event(s) have been added to the platform on your behalf:</p>
-        <ul style="padding-left: 20px;">${listHtml}</ul>
+      <div style="font-family: Inter, Arial, sans-serif; background: #f1f5f9; padding: 24px;">
+        <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%); color: #ffffff; padding: 22px 24px;">
+            <h2 style="margin: 0; font-size: 22px; line-height: 1.3;">Events Imported Successfully</h2>
+            <p style="margin: 8px 0 0 0; opacity: 0.92; font-size: 14px;">Your listings are now available on BizTradeFairs.</p>
+          </div>
+
+          <div style="padding: 22px 24px;">
+            <p style="margin: 0 0 12px 0; color: #0f172a;">Hello <strong>${firstName || "there"}</strong>,</p>
+            <p style="margin: 0 0 14px 0; color: #334155; line-height: 1.6;">
+              The following event(s) have been added to the platform on your behalf:
+            </p>
+            <ul style="padding: 0; margin: 0 0 18px 0; list-style: none;">${listHtml}</ul>
         ${
           setPasswordUrl
             ? `<p style="margin: 24px 0;">
-          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Set your password</a>
+          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Set your password</a>
         </p>
-        <p style="font-size: 13px; color: #6b7280;">Your organizer account was created during import. Use the button above to choose a password and sign in with <strong>${toEmail}</strong>.</p>
-        <p style="font-size: 12px; color: #9ca3af; word-break: break-all;">${setPasswordUrl}</p>`
-            : `<p>You can sign in with this email address to manage your events.</p>`
+        <p style="font-size: 13px; color: #475569; line-height: 1.6;">Your organizer account was created during import. Use the button above to choose a password and sign in with <strong>${toEmail}</strong>.</p>
+        <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${setPasswordUrl}</p>`
+            : `<p style="margin: 8px 0 0 0; color: #475569;">You can sign in with this email address to manage your events.</p>`
         }
-        <p>Best regards,<br/>The BizTradeFairs Team</p>
+            <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
+          </div>
+        </div>
       </div>
     `,
   });
@@ -256,7 +291,12 @@ export async function sendEventListingThankYouEmail(params: {
 
   const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
   const listHtml = eventTitles
-    .map((t) => `<li style="margin:6px 0;">${String(t).replace(/</g, "&lt;")}</li>`)
+    .map(
+      (t) =>
+        `<li style="margin: 8px 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">${String(
+          t
+        ).replace(/</g, "&lt;")}</li>`
+    )
     .join("");
 
   await transporter.sendMail({
@@ -264,20 +304,30 @@ export async function sendEventListingThankYouEmail(params: {
     to: toEmail,
     subject: `Event listing update (${eventTitles.length})`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
-        <h2 style="color: #2563eb;">Thank you</h2>
-        <p>Hello ${firstName || "there"},</p>
-        <p>Your event listing has been processed. Events:</p>
-        <ul style="padding-left: 20px;">${listHtml}</ul>
+      <div style="font-family: Inter, Arial, sans-serif; background: #f1f5f9; padding: 24px;">
+        <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%); color: #ffffff; padding: 22px 24px;">
+            <h2 style="margin: 0; font-size: 22px; line-height: 1.3;">Event Listing Update</h2>
+            <p style="margin: 8px 0 0 0; opacity: 0.92; font-size: 14px;">Your event details were processed successfully.</p>
+          </div>
+
+          <div style="padding: 22px 24px;">
+            <p style="margin: 0 0 12px 0; color: #0f172a;">Hello <strong>${firstName || "there"}</strong>,</p>
+            <p style="margin: 0 0 14px 0; color: #334155; line-height: 1.6;">
+              Your event listing has been processed. Events:
+            </p>
+            <ul style="padding: 0; margin: 0 0 18px 0; list-style: none;">${listHtml}</ul>
         ${
           setPasswordUrl
             ? `<p style="margin: 24px 0;">
-          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Set password</a>
+          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Set password</a>
         </p>
-        <p style="font-size: 13px; color: #6b7280;">Use this email <strong>${toEmail}</strong> to sign in after setting your password.</p>`
+        <p style="font-size: 13px; color: #475569; line-height: 1.6;">Use this email <strong>${toEmail}</strong> to sign in after setting your password.</p>`
             : ""
         }
-        <p>Best regards,<br/>The BizTradeFairs Team</p>
+            <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
+          </div>
+        </div>
       </div>
     `,
   });

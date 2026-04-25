@@ -78,6 +78,19 @@ router.get("/venue-manager/:id", async (req, res) => {
       });
     }
 
+    const now = new Date();
+    const [totalEvents, activeBookings] = await Promise.all([
+      prisma.event.count({
+        where: { venueId: venueManager.id },
+      }),
+      prisma.event.count({
+        where: {
+          venueId: venueManager.id,
+          endDate: { gte: now },
+        },
+      }),
+    ]);
+
     const data = {
       id: venueManager.id,
       name: venueManager.venueName || venueManager.company || "Unnamed Venue",
@@ -128,8 +141,8 @@ router.get("/venue-manager/:id", async (req, res) => {
       stats: {
         averageRating: venueManager.averageRating ?? 0,
         totalReviews: venueManager.totalReviews ?? 0,
-        activeBookings: venueManager.activeBookings ?? 0,
-        totalEvents: venueManager.totalEvents ?? 0,
+        activeBookings,
+        totalEvents,
       },
       amenities: (venueManager.amenities as string[] | null) ?? [],
       images: (venueManager.venueImages as string[] | null) ?? [],
