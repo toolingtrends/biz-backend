@@ -162,3 +162,17 @@ export async function importBulk(req: Request, res: Response) {
     return sendError(res, 500, "Failed to import organizers", e?.message);
   }
 }
+
+export async function sendAccountEmail(req: Request, res: Response) {
+  try {
+    await service.sendOrganizerAccountEmail({
+      organizerId: req.body?.organizerId,
+      organizerEmail: req.body?.organizerEmail,
+    });
+    return res.status(200).json({ success: true, message: "Organizer email sent successfully" });
+  } catch (e: any) {
+    if (e?.message?.includes("required")) return sendError(res, 400, e.message);
+    if (e?.message?.includes("not found")) return sendError(res, 404, e.message);
+    return sendError(res, 500, "Failed to send organizer email", e?.message);
+  }
+}

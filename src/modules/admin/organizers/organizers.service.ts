@@ -1,6 +1,8 @@
 import prisma from "../../../config/prisma";
 import { parseListQuery } from "../../../lib/admin-response";
 import type { UserRole } from "@prisma/client";
+import { randomBytes } from "crypto";
+import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../services/email.service";
 
 const ROLE: UserRole = "ORGANIZER";
 
@@ -183,6 +185,43 @@ export async function deleteOrganizer(id: string) {
   if (!existing) return null;
   await prisma.user.delete({ where: { id } });
   return { deleted: true };
+}
+
+export async function sendOrganizerAccountEmail(input: { organizerId?: string; organizerEmail?: string }) {
+  const organizerId = String(input.organizerId ?? "").trim();
+  const organizerEmail = String(input.organizerEmail ?? "").trim().toLowerCase();
+  if (!organizerId && !organizerEmail) {
+    throw new Error("organizerId or organizerEmail is required");
+  }
+
+  const organizer = await prisma.user.findFirst({
+    where: {
+      role: ROLE,
+      ...(organizerId ? { id: organizerId } : {}),
+      ...(organizerEmail ? { email: organizerEmail } : {}),
+    },
+    select: { id: true, email: true, firstName: true, emailVerified: true },
+  });
+  if (!organizer?.email) throw new Error("Organizer not found");
+
+  let setPasswordUrl: string | undefined;
+  if (!organizer.emailVerified) {
+    const resetToken = randomBytes(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await prisma.user.update({
+      where: { id: organizer.id },
+      data: { resetToken, resetTokenExpiry },
+    });
+    const base = resolveFrontendBase().replace(/\/$/, "");
+    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizer.email)}`;
+  }
+
+  await sendUserAccountAccessEmail({
+    toEmail: organizer.email,
+    firstName: organizer.firstName || "there",
+    roleLabel: "Organizer",
+    setPasswordUrl,
+  });
 }
 
 // ---------- Organizer followers / connections (admin dashboard) ----------

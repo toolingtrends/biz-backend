@@ -333,3 +333,50 @@ export async function sendEventListingThankYouEmail(params: {
   });
 }
 
+export async function sendUserAccountAccessEmail(params: {
+  toEmail: string;
+  firstName: string;
+  roleLabel: "Organizer" | "Venue Manager";
+  setPasswordUrl?: string;
+}): Promise<void> {
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    throw new Error("Email credentials are not configured");
+  }
+
+  const { toEmail, firstName, roleLabel, setPasswordUrl } = params;
+
+  await transporter.sendMail({
+    from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    to: toEmail,
+    subject: `${roleLabel} account access details`,
+    html: `
+      <div style="font-family: Inter, Arial, sans-serif; background: #f1f5f9; padding: 24px;">
+        <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%); color: #ffffff; padding: 22px 24px;">
+            <h2 style="margin: 0; font-size: 22px; line-height: 1.3;">${roleLabel} Account Update</h2>
+            <p style="margin: 8px 0 0 0; opacity: 0.92; font-size: 14px;">Your account details are ready on BizTradeFairs.</p>
+          </div>
+          <div style="padding: 22px 24px;">
+            <p style="margin: 0 0 12px 0; color: #0f172a;">Hello <strong>${firstName || "there"}</strong>,</p>
+            <p style="margin: 0 0 14px 0; color: #334155; line-height: 1.6;">
+              Your <strong>${roleLabel}</strong> account is available with this email: <strong>${toEmail}</strong>.
+            </p>
+            ${
+              setPasswordUrl
+                ? `<p style="margin: 20px 0;">
+                    <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Verify Email & Set Password</a>
+                  </p>
+                  <p style="font-size: 13px; color: #475569; line-height: 1.6;">
+                    Please verify your email and set a password to sign in.
+                  </p>
+                  <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${setPasswordUrl}</p>`
+                : `<p style="margin: 8px 0 0 0; color: #475569;">You can sign in directly using your existing password.</p>`
+            }
+            <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
+          </div>
+        </div>
+      </div>
+    `,
+  });
+}
+

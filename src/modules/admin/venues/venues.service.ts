@@ -1,6 +1,8 @@
 import prisma from "../../../config/prisma";
 import { parseListQuery } from "../../../lib/admin-response";
 import type { UserRole } from "@prisma/client";
+import { randomBytes } from "crypto";
+import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../services/email.service";
 
 const ROLE: UserRole = "VENUE_MANAGER";
 
@@ -221,4 +223,41 @@ export async function deleteVenue(id: string) {
   if (!existing) return null;
   await prisma.user.delete({ where: { id } });
   return { deleted: true };
+}
+
+export async function sendVenueAccountEmail(input: { venueId?: string; venueEmail?: string }) {
+  const venueId = String(input.venueId ?? "").trim();
+  const venueEmail = String(input.venueEmail ?? "").trim().toLowerCase();
+  if (!venueId && !venueEmail) {
+    throw new Error("venueId or venueEmail is required");
+  }
+
+  const venue = await prisma.user.findFirst({
+    where: {
+      role: ROLE,
+      ...(venueId ? { id: venueId } : {}),
+      ...(venueEmail ? { email: venueEmail } : {}),
+    },
+    select: { id: true, email: true, firstName: true, emailVerified: true, venueName: true },
+  });
+  if (!venue?.email) throw new Error("Venue manager not found");
+
+  let setPasswordUrl: string | undefined;
+  if (!venue.emailVerified) {
+    const resetToken = randomBytes(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await prisma.user.update({
+      where: { id: venue.id },
+      data: { resetToken, resetTokenExpiry },
+    });
+    const base = resolveFrontendBase().replace(/\/$/, "");
+    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(venue.email)}`;
+  }
+
+  await sendUserAccountAccessEmail({
+    toEmail: venue.email,
+    firstName: venue.firstName || venue.venueName || "there",
+    roleLabel: "Venue Manager",
+    setPasswordUrl,
+  });
 }

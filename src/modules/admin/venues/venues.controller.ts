@@ -79,3 +79,17 @@ export async function importBulk(req: Request, res: Response) {
     return sendError(res, 500, "Failed to import venues", e?.message);
   }
 }
+
+export async function sendAccountEmail(req: Request, res: Response) {
+  try {
+    await service.sendVenueAccountEmail({
+      venueId: req.body?.venueId,
+      venueEmail: req.body?.venueEmail,
+    });
+    return res.status(200).json({ success: true, message: "Venue manager email sent successfully" });
+  } catch (e: any) {
+    if (e?.message?.includes("required")) return sendError(res, 400, e.message);
+    if (e?.message?.includes("not found")) return sendError(res, 404, e.message);
+    return sendError(res, 500, "Failed to send venue email", e?.message);
+  }
+}
