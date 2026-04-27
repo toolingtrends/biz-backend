@@ -495,16 +495,24 @@ export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: str
       event: {
         select: {
           id: true,
+          slug: true,
           title: true,
           description: true,
           startDate: true,
           endDate: true,
           status: true,
           currency: true,
+          images: true,
+          bannerImage: true,
+          thumbnailImage: true,
           venue: {
             select: {
               venueName: true,
               venueAddress: true,
+              venueCity: true,
+              venueState: true,
+              venueCountry: true,
+              venueZipCode: true,
             },
           },
           organizer: {
@@ -530,8 +538,14 @@ export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: str
   });
 
   const events = booths.map((booth) => {
-    const venue = booth.event.venue as { venueName?: string; venueAddress?: string } | null
-    const venueDisplay = venue?.venueName || venue?.venueAddress || "TBD"
+    const venue = booth.event.venue as {
+      venueName?: string
+      venueAddress?: string
+      venueCity?: string
+      venueState?: string
+      venueCountry?: string
+      venueZipCode?: string
+    } | null
     const rawStart = booth.event.startDate as Date
     const rawEnd = booth.event.endDate as Date
     const startIso = rawStart instanceof Date ? rawStart.toISOString() : String(rawStart)
@@ -539,12 +553,24 @@ export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: str
     return {
       id: booth.id,
       eventId: booth.eventId,
+      eventSlug: booth.event.slug || booth.event.id,
       eventName: booth.event.title,
+      bannerImage: booth.event.bannerImage || booth.event.images?.[0] || null,
+      thumbnailImage: booth.event.thumbnailImage || booth.event.images?.[0] || null,
       date: startIso.split("T")[0],
       endDate: endIso.split("T")[0],
       rawStartDate: startIso,
       rawEndDate: endIso,
-      venue: venueDisplay,
+      venue: venue
+        ? {
+            venueName: venue.venueName ?? "",
+            venueAddress: venue.venueAddress ?? "",
+            venueCity: venue.venueCity ?? "",
+            venueState: venue.venueState ?? "",
+            venueCountry: venue.venueCountry ?? "",
+            venueZipCode: venue.venueZipCode ?? "",
+          }
+        : null,
       boothSize: "Standard",
       boothNumber: booth.boothNumber,
       paymentStatus: booth.status === "BOOKED" ? "PAID" : "PENDING",
