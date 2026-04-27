@@ -170,6 +170,12 @@ export async function createExhibitorReviewHandler(req: Request, res: Response) 
     const review = await createExhibitorReview(exhibitorId, req.body ?? {}, userId);
     return res.status(201).json(review);
   } catch (error: any) {
+    if (error instanceof Error && error.message === "Exhibitor not found") {
+      return res.status(404).json({ error: "Exhibitor not found" });
+    }
+    if (error instanceof Error && error.message.includes("exhibitorId is required")) {
+      return res.status(400).json({ error: "exhibitorId is required" });
+    }
     // eslint-disable-next-line no-console
     console.error("Error creating exhibitor review (backend):", error);
     return res.status(500).json({ error: "Internal server error" });
@@ -195,6 +201,9 @@ export async function createExhibitorReviewReplyHandler(req: Request, res: Respo
     );
     return res.status(201).json(reply);
   } catch (error: any) {
+    if (error instanceof Error && error.message === "Exhibitor not found") {
+      return res.status(404).json({ error: "Exhibitor not found" });
+    }
     if (error instanceof Error && error.message === "Review not found") {
       return res.status(404).json({ error: "Review not found" });
     }

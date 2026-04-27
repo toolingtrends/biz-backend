@@ -664,6 +664,10 @@ export async function addExhibitorReviewReply(
   body: { content: string },
   userId: string
 ) {
+  exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";
+  if (!exhibitorId) {
+    throw new Error("Exhibitor not found");
+  }
   const review = await prisma.review.findFirst({
     where: { id: reviewId, exhibitorId },
   });
@@ -704,8 +708,9 @@ export async function createExhibitorReview(
   body: { rating: number; title?: string; comment: string },
   userId?: string
 ) {
+  exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";
   if (!exhibitorId) {
-    throw new Error("exhibitorId is required");
+    throw new Error("Exhibitor not found");
   }
   const review = await prisma.review.create({
     data: {
