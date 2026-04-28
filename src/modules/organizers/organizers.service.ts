@@ -27,6 +27,7 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
       website: true,
       location: true,
       organizationName: true,
+      company: true,
       description: true,
       headquarters: true,
       totalReviews: true,
@@ -90,6 +91,7 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
             firstName: organizer.firstName,
             lastName: organizer.lastName,
             organizationName: organizer.organizationName,
+            company: organizer.company,
           },
           "ORGANIZER",
         ),
@@ -134,7 +136,7 @@ async function resolveOrganizerId(identifier: string): Promise<string | null> {
   if (!targetSlug) return null;
   const organizers = await prisma.user.findMany({
     where: { role: "ORGANIZER", isActive: true },
-    select: { id: true, firstName: true, lastName: true, organizationName: true },
+    select: { id: true, firstName: true, lastName: true, organizationName: true, company: true },
   });
   const withSlug = organizers.map((u) => ({
     u,
@@ -144,6 +146,7 @@ async function resolveOrganizerId(identifier: string): Promise<string | null> {
         firstName: u.firstName,
         lastName: u.lastName,
         organizationName: u.organizationName,
+        company: u.company,
       },
       "ORGANIZER",
     ),
@@ -281,6 +284,7 @@ export async function getOrganizerById(identifier: string, viewerUserId?: string
         firstName: organizer.firstName,
         lastName: organizer.lastName,
         organizationName: organizer.organizationName,
+        company: organizer.company,
       },
       "ORGANIZER",
     ),

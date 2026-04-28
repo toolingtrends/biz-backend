@@ -6,6 +6,7 @@ import {
   canBypassEventPrivacy,
   isEventPubliclyVisible,
 } from "../../utils/public-profile";
+import { getPublicProfileSlug } from "../../utils/profile-slug";
 
 const statusMap: Record<string, string> = {
   PUBLISHED: "Approved",
@@ -466,6 +467,45 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
       }
     : null;
 
+  // Match GET /organizers/:id — User.totalEvents/activeEvents are often stale; counts must come from Event rows.
+  let organizerEventCounts: { totalEvents: number; activeEvents: number } | null = null;
+  if (event.organizerId && event.organizer) {
+    const [allEv, publishedEv] = await Promise.all([
+      prisma.event.aggregate({
+        where: { organizerId: event.organizerId },
+        _count: { id: true },
+      }),
+      prisma.event.aggregate({
+        where: { organizerId: event.organizerId, status: "PUBLISHED" },
+        _count: { id: true },
+      }),
+    ]);
+    organizerEventCounts = {
+      totalEvents: allEv._count.id,
+      activeEvents: publishedEv._count.id,
+    };
+  }
+
+  const organizerPublic = event.organizer
+    ? {
+        ...event.organizer,
+        publicSlug: getPublicProfileSlug(
+          {
+            role: "ORGANIZER",
+            firstName: event.organizer.firstName,
+            lastName: event.organizer.lastName,
+            organizationName: event.organizer.organizationName,
+            company: event.organizer.company,
+          },
+          "ORGANIZER",
+        ),
+        ...(organizerEventCounts && {
+          totalEvents: organizerEventCounts.totalEvents,
+          activeEvents: organizerEventCounts.activeEvents,
+        }),
+      }
+    : null;
+
   const data = {
     ...event,
     title: event.title || "Untitled Event",
@@ -479,6 +519,7 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
     layoutPlan: event.layoutPlan,
     slug,
     venue,
+    ...(organizerPublic ? { organizer: organizerPublic } : {}),
     metadata: {
       title: event.title,
       description: event.description || event.shortDescription,
