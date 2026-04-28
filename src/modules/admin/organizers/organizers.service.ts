@@ -52,6 +52,13 @@ export async function listOrganizers(query: Record<string, unknown>) {
         activeEvents: true,
         totalAttendees: true,
         totalRevenue: true,
+        averageRating: true,
+        totalReviews: true,
+        _count: {
+          select: {
+            organizedEvents: true,
+          },
+        },
       },
     }),
     prisma.user.count({ where }),
@@ -81,10 +88,14 @@ export async function listOrganizers(query: Record<string, unknown>) {
     businessPhone: u.businessPhone,
     businessAddress: u.businessAddress,
     taxId: u.taxId,
-    totalEvents: u.totalEvents,
+    // Prefer live relation count — User.totalEvents is often stale vs Event rows
+    totalEvents: u._count.organizedEvents,
     activeEvents: u.activeEvents,
     totalAttendees: u.totalAttendees,
     totalRevenue: u.totalRevenue,
+    averageRating: u.averageRating ?? 0,
+    totalReviews: u.totalReviews ?? 0,
+    _count: u._count,
   }));
   return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }

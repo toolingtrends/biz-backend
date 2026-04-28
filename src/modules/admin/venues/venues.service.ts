@@ -6,6 +6,84 @@ import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../servic
 
 const ROLE: UserRole = "VENUE_MANAGER";
 
+const venueEventListSelect = {
+  id: true,
+  title: true,
+  description: true,
+  startDate: true,
+  endDate: true,
+  status: true,
+  category: true,
+  eventType: true,
+  isVirtual: true,
+  venueId: true,
+} as const;
+
+function mapVenueEventsForAdmin(
+  rows: Array<{
+    id: string;
+    title: string;
+    description: string;
+    startDate: Date;
+    endDate: Date;
+    status: string;
+    category: string[];
+    eventType: string[];
+    isVirtual: boolean;
+    venueId: string | null;
+  }>,
+  fallbackVenueId: string,
+) {
+  return rows.map((e) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    startDate: e.startDate.toISOString(),
+    endDate: e.endDate.toISOString(),
+    status: String(e.status),
+    category: e.category ?? [],
+    eventType: e.eventType ?? [],
+    isVirtual: e.isVirtual,
+    venueId: e.venueId ?? fallbackVenueId,
+  }));
+}
+
+function spaceCapacityFromRow(row: object): number {
+  const r = row as Record<string, unknown>;
+  for (const key of ["capacity", "maxCapacity", "seatingCapacity", "maxAttendees"] as const) {
+    if (!(key in r)) continue;
+    const n = Number(r[key]);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+/** When maxCapacity / totalHalls are unset (or 0), derive from meetingSpaces JSON — mirrors public /venue UI. */
+function inferFromMeetingSpaces(meetingSpaces: unknown): { capacity: number; halls: number } {
+  if (!Array.isArray(meetingSpaces) || meetingSpaces.length === 0) {
+    return { capacity: 0, halls: 0 };
+  }
+  let capacity = 0;
+  for (const row of meetingSpaces) {
+    if (row && typeof row === "object") capacity += spaceCapacityFromRow(row as object);
+  }
+  return { capacity, halls: meetingSpaces.length };
+}
+
+/** DB may store 0 while meetingSpaces holds real totals; public venue page treats 0 as missing. */
+function resolveCapacityAndHalls(
+  maxCapacity: number | null | undefined,
+  totalHalls: number | null | undefined,
+  meetingSpaces: unknown,
+): { maxCapacity: number; totalHalls: number } {
+  const inferred = inferFromMeetingSpaces(meetingSpaces);
+  let cap = maxCapacity ?? 0;
+  let halls = totalHalls ?? 0;
+  if (!cap && inferred.capacity > 0) cap = inferred.capacity;
+  if (!halls && inferred.halls > 0) halls = inferred.halls;
+  return { maxCapacity: cap, totalHalls: halls };
+}
+
 async function syncLocationMasterFromVenue(input: {
   venueCountry?: unknown;
   venueState?: unknown;
@@ -93,34 +171,59 @@ export async function listVenues(query: Record<string, unknown>) {
         venueState: true,
         venueCountry: true,
         venueAddress: true,
+        venueWebsite: true,
         maxCapacity: true,
+        totalHalls: true,
+        averageRating: true,
+        totalReviews: true,
+        meetingSpaces: true,
+        isVerified: true,
         totalEvents: true,
         isActive: true,
         createdAt: true,
         updatedAt: true,
         _count: { select: { venueEvents: true } },
+        venueEvents: {
+          orderBy: { startDate: "desc" },
+          take: 8,
+          select: venueEventListSelect,
+        },
       },
     }),
     prisma.user.count({ where }),
   ]);
-  const data = items.map((u) => ({
-    id: u.id,
-    name: u.venueName || `${u.firstName || ""} ${u.lastName || ""}`.trim(),
-    firstName: u.firstName,
-    lastName: u.lastName,
-    email: u.email,
-    phone: u.phone,
-    venueName: u.venueName,
-    venueCity: u.venueCity,
-    venueState: u.venueState,
-    venueCountry: u.venueCountry,
-    venueAddress: u.venueAddress,
-    maxCapacity: u.maxCapacity,
-    totalEvents: (u._count?.venueEvents ?? 0) || (u as any).totalEvents || 0,
-    isActive: u.isActive,
-    createdAt: u.createdAt.toISOString(),
-    updatedAt: u.updatedAt.toISOString(),
-  }));
+  const data = items.map((u) => {
+    const { maxCapacity, totalHalls } = resolveCapacityAndHalls(
+      u.maxCapacity,
+      u.totalHalls,
+      u.meetingSpaces,
+    );
+    return {
+      id: u.id,
+      name: u.venueName || `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      phone: u.phone,
+      venueName: u.venueName,
+      venueCity: u.venueCity,
+      venueState: u.venueState,
+      venueCountry: u.venueCountry,
+      venueAddress: u.venueAddress,
+      website: u.venueWebsite,
+      maxCapacity,
+      totalHalls,
+      averageRating: u.averageRating ?? 0,
+      totalReviews: u.totalReviews ?? 0,
+      meetingSpaces: u.meetingSpaces,
+      isVerified: u.isVerified,
+      totalEvents: (u._count?.venueEvents ?? 0) || (u as any).totalEvents || 0,
+      isActive: u.isActive,
+      createdAt: u.createdAt.toISOString(),
+      updatedAt: u.updatedAt.toISOString(),
+      events: mapVenueEventsForAdmin((u as any).venueEvents ?? [], u.id),
+    };
+  });
   return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
@@ -138,15 +241,35 @@ export async function getVenueById(id: string) {
       venueState: true,
       venueCountry: true,
       venueAddress: true,
+      venueWebsite: true,
+      venueDescription: true,
       maxCapacity: true,
+      totalHalls: true,
+      averageRating: true,
+      totalReviews: true,
+      meetingSpaces: true,
+      amenities: true,
+      venueImages: true,
+      isVerified: true,
       totalEvents: true,
       isActive: true,
       createdAt: true,
       updatedAt: true,
       _count: { select: { venueEvents: true } },
+      venueEvents: {
+        orderBy: { startDate: "desc" },
+        take: 100,
+        select: venueEventListSelect,
+      },
     },
   });
   if (!user) return null;
+  const { maxCapacity, totalHalls } = resolveCapacityAndHalls(
+    user.maxCapacity,
+    user.totalHalls,
+    user.meetingSpaces,
+  );
+  const venueEventsList = (user as { venueEvents?: Parameters<typeof mapVenueEventsForAdmin>[0] }).venueEvents ?? [];
   return {
     id: user.id,
     name: user.venueName || `${user.firstName || ""} ${user.lastName || ""}`.trim(),
@@ -159,11 +282,21 @@ export async function getVenueById(id: string) {
     venueState: user.venueState,
     venueCountry: user.venueCountry,
     venueAddress: user.venueAddress,
-    maxCapacity: user.maxCapacity,
+    website: user.venueWebsite,
+    description: user.venueDescription,
+    maxCapacity,
+    totalHalls,
+    averageRating: user.averageRating ?? 0,
+    totalReviews: user.totalReviews ?? 0,
+    meetingSpaces: user.meetingSpaces,
+    amenities: user.amenities ?? [],
+    venueImages: user.venueImages ?? [],
+    isVerified: user.isVerified,
     totalEvents: (user._count?.venueEvents ?? 0) || (user as any).totalEvents || 0,
     isActive: user.isActive,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
+    events: mapVenueEventsForAdmin(venueEventsList, user.id),
   };
 }
 
