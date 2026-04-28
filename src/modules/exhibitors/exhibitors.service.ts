@@ -670,6 +670,82 @@ export async function getExhibitorPromotionsMarketingForSelf(
   };
 }
 
+export type CreateExhibitorPromotionBody = {
+  exhibitorId: string;
+  eventId: string;
+  packageType: string;
+  targetCategories: string[];
+  amount: number;
+  duration: number;
+};
+
+/** Logged-in exhibitor only: create promotion if they have a booth for the event. */
+export async function createExhibitorPromotionForSelf(
+  viewerUserId: string,
+  body: CreateExhibitorPromotionBody,
+): Promise<
+  | { promotion: Awaited<ReturnType<typeof prisma.promotion.create>> }
+  | { error: "FORBIDDEN" | "NOT_FOUND" | "NOT_BOOTH" | "INVALID" }
+> {
+  const resolved = (await resolveExhibitorId(body.exhibitorId)) ?? body.exhibitorId;
+  if (!resolved || viewerUserId !== resolved) {
+    return { error: "FORBIDDEN" };
+  }
+
+  const eventId = body.eventId?.trim();
+  const packageType = body.packageType?.trim();
+  const targetCategories = Array.isArray(body.targetCategories) ? body.targetCategories : [];
+  if (!eventId || !packageType || targetCategories.length === 0) {
+    return { error: "INVALID" };
+  }
+
+  const amount = Number(body.amount);
+  const duration = Number(body.duration);
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(duration) || duration <= 0) {
+    return { error: "INVALID" };
+  }
+
+  const booth = await prisma.exhibitorBooth.findFirst({
+    where: { exhibitorId: resolved, eventId },
+    select: { id: true },
+  });
+  if (!booth) {
+    return { error: "NOT_BOOTH" };
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { id: eventId },
+    select: { id: true },
+  });
+  if (!event) {
+    return { error: "NOT_FOUND" };
+  }
+
+  const startDate = new Date();
+  const endDate = new Date();
+  endDate.setDate(endDate.getDate() + Math.floor(duration));
+
+  const promotion = await prisma.promotion.create({
+    data: {
+      exhibitorId: resolved,
+      eventId,
+      organizerId: null,
+      packageType,
+      targetCategories,
+      amount,
+      duration: Math.floor(duration),
+      startDate,
+      endDate,
+      status: "PENDING",
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
+    },
+  });
+
+  return { promotion };
+}
+
 // --- Exhibitor reviews ---
 export async function listExhibitorReviews(exhibitorId: string) {
   exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";

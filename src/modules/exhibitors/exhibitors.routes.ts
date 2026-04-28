@@ -6,6 +6,7 @@ import {
   getExhibitorAnalyticsHandler,
   getExhibitorEventsHandler,
   getExhibitorPromotionsMarketingHandler,
+  createExhibitorPromotionHandler,
   createExhibitorHandler,
   getExhibitorLeadsCountHandler,
   getExhibitorReviewsHandler,
@@ -27,6 +28,7 @@ router.post("/exhibitors", createExhibitorHandler);
 
 // Must be before `/exhibitors/:id` so `promotions` is not captured as an id
 router.get("/exhibitors/promotions", requireUser, getExhibitorPromotionsMarketingHandler);
+router.post("/exhibitors/promotions", requireUser, createExhibitorPromotionHandler);
 
 // Single exhibitor (GET + PUT for profile); optional JWT to view own private profile
 router.get("/exhibitors/:id", optionalUser, getExhibitorHandler);

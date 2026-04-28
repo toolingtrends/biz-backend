@@ -6,6 +6,7 @@ import {
   getExhibitorAnalytics,
   getExhibitorEvents,
   getExhibitorPromotionsMarketingForSelf,
+  createExhibitorPromotionForSelf,
   createExhibitor,
   listExhibitorReviews,
   createExhibitorReview,
@@ -150,6 +151,45 @@ export async function getExhibitorPromotionsMarketingHandler(req: Request, res: 
     }
     // eslint-disable-next-line no-console
     console.error("Error fetching exhibitor promotions marketing (backend):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function createExhibitorPromotionHandler(req: Request, res: Response) {
+  try {
+    if (req.auth?.domain !== "USER" || !req.auth.sub) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const viewerUserId = req.auth.sub;
+    const raw = req.body ?? {};
+    const result = await createExhibitorPromotionForSelf(viewerUserId, {
+      exhibitorId: typeof raw.exhibitorId === "string" ? raw.exhibitorId : "",
+      eventId: typeof raw.eventId === "string" ? raw.eventId : "",
+      packageType: typeof raw.packageType === "string" ? raw.packageType : "",
+      targetCategories: Array.isArray(raw.targetCategories) ? (raw.targetCategories as string[]) : [],
+      amount: Number(raw.amount),
+      duration: Number(raw.duration),
+    });
+    if ("error" in result) {
+      if (result.error === "FORBIDDEN") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      if (result.error === "NOT_FOUND") {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      if (result.error === "NOT_BOOTH") {
+        return res.status(403).json({ error: "No booth booking for this event" });
+      }
+      return res.status(400).json({ error: "Missing or invalid fields" });
+    }
+    return res.status(201).json({
+      success: true,
+      message: "Promotion created successfully",
+      promotion: result.promotion,
+    });
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error("Error creating exhibitor promotion (backend):", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
