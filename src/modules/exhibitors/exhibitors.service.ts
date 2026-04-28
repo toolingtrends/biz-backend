@@ -589,6 +589,87 @@ export async function getExhibitorEvents(exhibitorId: string, viewerUserId?: str
   return events;
 }
 
+/** Logged-in exhibitor only: promotions + event dropdown (same shape as Next `/api/exhibitors/promotions`). */
+export async function getExhibitorPromotionsMarketingForSelf(
+  exhibitorId: string,
+  viewerUserId: string,
+): Promise<{
+  promotions: Array<{
+    id: string;
+    eventId: string | null;
+    eventName: string;
+    packageType: string;
+    status: string;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    startDate: Date;
+    endDate: Date;
+    amount: number;
+    duration: number;
+    targetCategories: string[];
+  }>;
+  events: Array<{ id: string; title: string; date: string; location: string; status: string }>;
+}> {
+  const resolved = (await resolveExhibitorId(exhibitorId)) ?? exhibitorId;
+  if (!resolved || viewerUserId !== resolved) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const eventsFull = await getExhibitorEvents(resolved, viewerUserId);
+  const eventsMap = new Map<
+    string,
+    { id: string; title: string; date: string; location: string; status: string }
+  >();
+  for (const row of eventsFull) {
+    const eid = row.eventId;
+    if (!eid || eventsMap.has(eid)) continue;
+    const v = row.venue as {
+      venueName?: string;
+      venueCity?: string;
+      venueState?: string;
+    } | null;
+    const parts = v ? [v.venueName, v.venueCity, v.venueState].filter(Boolean) : [];
+    const location = parts.length ? parts.join(", ") : "N/A";
+    eventsMap.set(eid, {
+      id: eid,
+      title: row.eventName,
+      date: row.date,
+      location,
+      status: String(row.status ?? "Scheduled"),
+    });
+  }
+
+  const promotions = await prisma.promotion.findMany({
+    where: { exhibitorId: resolved },
+    include: {
+      event: { select: { title: true, startDate: true, endDate: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const formattedPromotions = promotions.map((promotion) => ({
+    id: promotion.id,
+    eventId: promotion.eventId,
+    eventName: promotion.event?.title || "Unknown Event",
+    packageType: promotion.packageType,
+    status: promotion.status,
+    impressions: promotion.impressions ?? 0,
+    clicks: promotion.clicks ?? 0,
+    conversions: promotion.conversions ?? 0,
+    startDate: promotion.startDate,
+    endDate: promotion.endDate,
+    amount: promotion.amount,
+    duration: promotion.duration,
+    targetCategories: promotion.targetCategories ?? [],
+  }));
+
+  return {
+    promotions: formattedPromotions,
+    events: Array.from(eventsMap.values()),
+  };
+}
+
 // --- Exhibitor reviews ---
 export async function listExhibitorReviews(exhibitorId: string) {
   exhibitorId = (await resolveExhibitorId(exhibitorId)) ?? "";

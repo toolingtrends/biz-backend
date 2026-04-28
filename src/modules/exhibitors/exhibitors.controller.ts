@@ -5,6 +5,7 @@ import {
   updateExhibitorProfile,
   getExhibitorAnalytics,
   getExhibitorEvents,
+  getExhibitorPromotionsMarketingForSelf,
   createExhibitor,
   listExhibitorReviews,
   createExhibitorReview,
@@ -126,6 +127,29 @@ export async function getExhibitorEventsHandler(req: Request, res: Response) {
     }
     // eslint-disable-next-line no-console
     console.error("Error fetching exhibitor events (backend):", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+/** Logged-in exhibitor: promotions + events for Promotions & Marketing dashboard. */
+export async function getExhibitorPromotionsMarketingHandler(req: Request, res: Response) {
+  try {
+    const exhibitorId = typeof req.query.exhibitorId === "string" ? req.query.exhibitorId.trim() : "";
+    if (!exhibitorId) {
+      return res.status(400).json({ error: "exhibitorId is required" });
+    }
+    const viewerId = req.auth?.domain === "USER" ? req.auth.sub : undefined;
+    if (!viewerId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const data = await getExhibitorPromotionsMarketingForSelf(exhibitorId, viewerId);
+    return res.status(200).json(data);
+  } catch (error: any) {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    // eslint-disable-next-line no-console
+    console.error("Error fetching exhibitor promotions marketing (backend):", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
