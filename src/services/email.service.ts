@@ -2,18 +2,29 @@ import nodemailer from "nodemailer";
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
-/** When set, mail is sent via SendGrid HTTPS API (works when VPS blocks SMTP to Gmail). */
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY?.trim();
-/** Verified sender domain in SendGrid; falls back to EMAIL_USER for “from” display. */
-const EFFECTIVE_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL?.trim() || EMAIL_USER;
 
-if (!SENDGRID_API_KEY && (!EMAIL_USER || !EMAIL_PASS)) {
-  if (process.env.NODE_ENV !== "test") {
-    // eslint-disable-next-line no-console
-    console.warn(
-      "[email.service] Set SENDGRID_API_KEY (recommended on VPS) or EMAIL_USER + EMAIL_PASS for Gmail SMTP."
-    );
-  }
+/** Read at call time so `dotenv` / `load-env` runs before any import of this module. */
+function getSendGridApiKey(): string {
+  return (process.env.SENDGRID_API_KEY ?? "").trim();
+}
+
+function getEffectiveFromEmail(): string | undefined {
+  const fromSg = process.env.SENDGRID_FROM_EMAIL?.trim();
+  if (fromSg) return fromSg;
+  const u = process.env.EMAIL_USER?.trim();
+  return u || undefined;
+}
+
+function mailConfigured(): boolean {
+  if (getSendGridApiKey()) return !!getEffectiveFromEmail();
+  return !!(process.env.EMAIL_USER?.trim() && process.env.EMAIL_PASS);
+}
+
+if (!mailConfigured() && process.env.NODE_ENV !== "test") {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[email.service] Set SENDGRID_API_KEY + SENDGRID_FROM_EMAIL (VPS), or EMAIL_USER + EMAIL_PASS (Gmail SMTP).",
+  );
 }
 
 const transporter = nodemailer.createTransport({
@@ -39,8 +50,8 @@ function parseFromHeader(from: string): { name?: string; email: string } {
 }
 
 function requireMailConfig(): void {
-  if (SENDGRID_API_KEY) {
-    if (!EFFECTIVE_FROM_EMAIL) {
+  if (getSendGridApiKey()) {
+    if (!getEffectiveFromEmail()) {
       throw new Error(
         "Set SENDGRID_FROM_EMAIL (verified sender in SendGrid) or EMAIL_USER when using SENDGRID_API_KEY.",
       );
@@ -63,7 +74,7 @@ async function sendViaSendGrid(opts: {
   attachments?: MailAttachment[];
 }): Promise<void> {
   const fromParsed = parseFromHeader(opts.from);
-  const fromEmail = EFFECTIVE_FROM_EMAIL || fromParsed.email || EMAIL_USER;
+  const fromEmail = getEffectiveFromEmail() || fromParsed.email || EMAIL_USER;
   if (!fromEmail) {
     throw new Error("Missing sender email for SendGrid.");
   }
@@ -101,7 +112,7 @@ async function sendViaSendGrid(opts: {
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${SENDGRID_API_KEY}`,
+      Authorization: `Bearer ${getSendGridApiKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -123,7 +134,7 @@ async function dispatchMail(opts: {
   attachments?: MailAttachment[];
 }): Promise<void> {
   requireMailConfig();
-  if (SENDGRID_API_KEY) {
+  if (getSendGridApiKey()) {
     await sendViaSendGrid(opts);
     return;
   }
@@ -143,7 +154,7 @@ async function dispatchMail(opts: {
 
 export async function sendOtpEmail(email: string, otp: string): Promise<void> {
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: email,
     subject: "Your OTP Verification Code",
     html: `
@@ -173,7 +184,7 @@ export async function sendBadgeEmail(
   const buffer = Buffer.from(base64Data, "base64");
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: email,
     subject: `Your Event Badge - ${eventName}`,
     html: `
@@ -198,7 +209,7 @@ export async function sendBadgeEmail(
 
 export async function sendVerificationEmail(email: string, otp: string): Promise<void> {
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: email,
     subject: "Your OTP Verification Code",
     html: `
@@ -250,7 +261,7 @@ export async function sendPasswordResetLinkEmail(params: {
   const { toEmail, resetUrl, firstName, roleLabel } = params;
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
     subject: "Reset your password",
     html: `
@@ -279,7 +290,7 @@ export async function sendAdminPasswordResetOtpEmail(params: {
   const { toEmail, otp, name, adminKind } = params;
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
     subject: `Your ${adminKind} password reset code`,
     html: `
@@ -319,7 +330,7 @@ export async function sendEventImportThankYouEmail(params: {
     .join("");
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
     subject: `Your events were imported (${eventTitles.length})`,
     html: `
@@ -364,7 +375,7 @@ export async function sendMarketingEmail(params: {
     `<div style="font-family: Arial, sans-serif; line-height: 1.6; white-space: pre-wrap;">${params.content}</div>`;
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: params.to,
     subject: params.subject,
     text: params.content,
@@ -389,7 +400,7 @@ export async function sendEventListingThankYouEmail(params: {
     .join("");
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
     subject: `Event listing update (${eventTitles.length})`,
     html: `
@@ -431,7 +442,7 @@ export async function sendUserAccountAccessEmail(params: {
   const { toEmail, firstName, roleLabel, setPasswordUrl } = params;
 
   await dispatchMail({
-    from: `"BizTradeFairs" <${EFFECTIVE_FROM_EMAIL}>`,
+    from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
     subject: `${roleLabel} account access details`,
     html: `
