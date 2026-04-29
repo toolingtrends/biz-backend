@@ -81,6 +81,8 @@ npm run test:coverage
 2. **Or** on the server, before build: `export NODE_OPTIONS=--max-old-space-size=384` then `npm run build` (add **swap** if the kernel OOM-kills the process).
 3. **Run** the API with a bounded heap so the OS keeps headroom: use the included PM2 file — `pm2 start ecosystem.config.cjs` (sets `--max-old-space-size=384` and `max_memory_restart`). After editing `.env`: `pm2 restart biz-backend --update-env`.
 
+The app loads **`<project>/biz-backend/.env`** from the install directory (not `process.cwd()`), so SendGrid/DB keys in `~/biz-backend/.env` are used even if PM2 was started from another directory.
+
 ### SendGrid `EMAIL_VENDOR` on `/send-otp`
 
 That code means SendGrid returned an error (bad API key, unverified sender, etc.). Check **server** logs for `[email.service] SendGrid HTTP`. To return a short `detail` in the JSON response temporarily, set `EXPOSE_EMAIL_ERRORS=true` in `.env` and restart PM2 with `--update-env` (disable after debugging).

@@ -112,7 +112,19 @@ async function sendViaSendGrid(opts) {
     });
     if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`SendGrid error ${res.status}: ${errText}`);
+        let summary = errText.slice(0, 800);
+        try {
+            const parsed = JSON.parse(errText);
+            if (parsed.errors?.length) {
+                summary = parsed.errors.map((e) => e.message).filter(Boolean).join("; ") || summary;
+            }
+        }
+        catch {
+            /* keep raw text */
+        }
+        // eslint-disable-next-line no-console
+        console.error("[email.service] SendGrid HTTP", res.status, errText.slice(0, 2000));
+        throw new Error(`SendGrid error ${res.status}: ${summary}`);
     }
 }
 async function dispatchMail(opts) {
