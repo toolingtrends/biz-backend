@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
@@ -38,6 +39,13 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 15_000,
   greetingTimeout: 15_000,
   socketTimeout: 20_000,
+});
+
+/** Undici default connect timeout is 10s; small VPS / flaky routes can hit UND_ERR_CONNECT_TIMEOUT. */
+const sendgridAgent = new Agent({
+  connect: { timeout: 30_000 },
+  headersTimeout: 45_000,
+  bodyTimeout: 45_000,
 });
 
 function parseFromHeader(from: string): { name?: string; email: string } {
@@ -109,15 +117,24 @@ async function sendViaSendGrid(opts: {
     }));
   }
 
-  const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getSendGridApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25_000),
-  });
+  let res: Awaited<ReturnType<typeof undiciFetch>>;
+  try {
+    res = await undiciFetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getSendGridApiKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      dispatcher: sendgridAgent,
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    // eslint-disable-next-line no-console
+    console.error("[email.service] SendGrid fetch failed:", err);
+    throw new Error(`SendGrid network error: ${err.message}`);
+  }
 
   if (!res.ok) {
     const errText = await res.text();

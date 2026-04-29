@@ -15,6 +15,7 @@ exports.sendMarketingEmail = sendMarketingEmail;
 exports.sendEventListingThankYouEmail = sendEventListingThankYouEmail;
 exports.sendUserAccountAccessEmail = sendUserAccountAccessEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
+const undici_1 = require("undici");
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 /** Read at call time so `dotenv` / `load-env` runs before any import of this module. */
@@ -48,6 +49,12 @@ const transporter = nodemailer_1.default.createTransport({
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,
+});
+/** Undici default connect timeout is 10s; small VPS / flaky routes can hit UND_ERR_CONNECT_TIMEOUT. */
+const sendgridAgent = new undici_1.Agent({
+    connect: { timeout: 30000 },
+    headersTimeout: 45000,
+    bodyTimeout: 45000,
 });
 function parseFromHeader(from) {
     const m = from.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
@@ -101,15 +108,25 @@ async function sendViaSendGrid(opts) {
             disposition: "attachment",
         }));
     }
-    const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${getSendGridApiKey()}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(25000),
-    });
+    let res;
+    try {
+        res = await (0, undici_1.fetch)("https://api.sendgrid.com/v3/mail/send", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${getSendGridApiKey()}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+            dispatcher: sendgridAgent,
+            signal: AbortSignal.timeout(45000),
+        });
+    }
+    catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        // eslint-disable-next-line no-console
+        console.error("[email.service] SendGrid fetch failed:", err);
+        throw new Error(`SendGrid network error: ${err.message}`);
+    }
     if (!res.ok) {
         const errText = await res.text();
         let summary = errText.slice(0, 800);

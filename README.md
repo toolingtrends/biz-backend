@@ -86,4 +86,4 @@ The app loads **`<project>/biz-backend/.env`** from the install directory (not `
 
 ### SendGrid `EMAIL_VENDOR` on `/send-otp`
 
-That code means SendGrid returned an error (bad API key, unverified sender, etc.). Check **server** logs for `[email.service] SendGrid HTTP`. To return a short `detail` in the JSON response temporarily, set `EXPOSE_EMAIL_ERRORS=true` in `.env` and restart PM2 with `--update-env` (disable after debugging).
+That code means SendGrid returned an error (bad API key, unverified sender, etc.). Check **server** logs for `[email.service] SendGrid HTTP`. **`EMAIL_NETWORK`** means the request never reached a proper HTTP error (timeout connecting to SendGrid from the VPS—firewall, routing, or congestion); long connect timeouts were raised in `email.service.ts`. To return a short `detail` in the JSON response temporarily, set `EXPOSE_EMAIL_ERRORS=true` in `.env` and restart PM2 with `--update-env` (disable after debugging).
