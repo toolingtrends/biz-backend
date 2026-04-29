@@ -27,6 +27,18 @@ function corsAllowedOrigins(): { allowAny: boolean; origins: Set<string> } {
   return { allowAny, origins };
 }
 
+/** When `CORS_ALLOW_VERCEL_APP=true`, allow any `https://*.vercel.app` preview / production URL. */
+function isVercelAppHttpsOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "https:") return false;
+    const host = u.hostname.toLowerCase();
+    return host.endsWith(".vercel.app");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Builds the Express application (no listen, no env validation, no background jobs).
  * Used by the HTTP server and by integration tests.
@@ -38,6 +50,9 @@ export function createApp(): express.Application {
   app.use(express.json());
 
   const { allowAny, origins } = corsAllowedOrigins();
+  const allowVercelApp =
+    process.env.CORS_ALLOW_VERCEL_APP?.trim().toLowerCase() === "true";
+
   app.use(
     cors({
       origin: (origin, callback) => {
@@ -45,6 +60,9 @@ export function createApp(): express.Application {
           return callback(null, true);
         }
         if (allowAny || origins.has(origin)) {
+          return callback(null, true);
+        }
+        if (allowVercelApp && isVercelAppHttpsOrigin(origin)) {
           return callback(null, true);
         }
         return callback(null, false);

@@ -1,4 +1,7 @@
 // backend/scripts/create-super-admin.js
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -62,8 +65,9 @@ async function main() {
   if (!bootstrapSecret) {
     throw new Error("Blocked. ADMIN_BOOTSTRAP_SECRET is required.");
   }
-  if (!args.secret || !safeEqual(args.secret, bootstrapSecret)) {
-    throw new Error("Blocked. Invalid bootstrap secret.");
+  // If --secret is passed, it must match .env (optional: npm on Windows often drops args; .env alone is enough when ENABLE=true).
+  if (args.secret && !safeEqual(args.secret, bootstrapSecret)) {
+    throw new Error("Blocked. Invalid bootstrap secret (--secret does not match ADMIN_BOOTSTRAP_SECRET in .env).");
   }
 
   const email = String(args.email || "").trim().toLowerCase();

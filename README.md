@@ -20,6 +20,8 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 
      The API uses `credentials: true`, so `*` is not valid for browser requests; your frontend’s exact `https://…` origin must be listed.
 
+   - **Vercel previews:** each deployment gets a different `*.vercel.app` URL. Either add every URL to `CORS_ORIGIN`, or set **`CORS_ALLOW_VERCEL_APP=true`** (allows all `https://*.vercel.app` origins — still requires JWT for protected routes).
+
 3. **Database**
    - Create tables (no migrations): `npx prisma db push`
    - Or use migrations: `npx prisma migrate dev --name init`
