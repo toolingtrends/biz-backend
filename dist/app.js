@@ -30,6 +30,19 @@ function corsAllowedOrigins() {
     const origins = new Set(list.filter((o) => o !== "*"));
     return { allowAny, origins };
 }
+/** When `CORS_ALLOW_VERCEL_APP=true`, allow any `https://*.vercel.app` preview / production URL. */
+function isVercelAppHttpsOrigin(origin) {
+    try {
+        const u = new URL(origin);
+        if (u.protocol !== "https:")
+            return false;
+        const host = u.hostname.toLowerCase();
+        return host.endsWith(".vercel.app");
+    }
+    catch {
+        return false;
+    }
+}
 /**
  * Builds the Express application (no listen, no env validation, no background jobs).
  * Used by the HTTP server and by integration tests.
@@ -39,12 +52,16 @@ function createApp() {
     app.use((0, helmet_1.default)());
     app.use(express_1.default.json());
     const { allowAny, origins } = corsAllowedOrigins();
+    const allowVercelApp = process.env.CORS_ALLOW_VERCEL_APP?.trim().toLowerCase() === "true";
     app.use((0, cors_1.default)({
         origin: (origin, callback) => {
             if (!origin) {
                 return callback(null, true);
             }
             if (allowAny || origins.has(origin)) {
+                return callback(null, true);
+            }
+            if (allowVercelApp && isVercelAppHttpsOrigin(origin)) {
                 return callback(null, true);
             }
             return callback(null, false);

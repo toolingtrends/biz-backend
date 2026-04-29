@@ -108,7 +108,23 @@ router.post("/send-otp", async (req, res) => {
     catch (err) {
         // eslint-disable-next-line no-console
         console.error("Send OTP error (backend):", err);
-        return res.status(500).json({ message: "Failed to send OTP" });
+        const msg = err instanceof Error ? err.message : String(err);
+        const prismaCode = typeof err === "object" && err && "code" in err ? String(err.code) : "";
+        let code;
+        if (msg.includes("SendGrid error") || msg.includes("SendGrid")) {
+            code = "EMAIL_VENDOR";
+        }
+        else if (msg.includes("credentials are not configured") || msg.includes("sender email")) {
+            code = "EMAIL_NOT_CONFIGURED";
+        }
+        else if (prismaCode.startsWith("P") || msg.includes("Prisma")) {
+            code = "DATABASE";
+        }
+        return res.status(500).json({
+            message: "Failed to send OTP",
+            ...(code ? { code } : {}),
+            ...(process.env.NODE_ENV === "development" ? { detail: msg.slice(0, 500) } : {}),
+        });
     }
 });
 // POST /api/auth/verify-otp

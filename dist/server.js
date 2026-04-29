@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+require("./load-env");
 const env_1 = require("./config/env");
 const app_1 = require("./app");
 const deactivation_scheduler_1 = require("./jobs/deactivation-scheduler");

@@ -17,12 +17,25 @@ exports.sendUserAccountAccessEmail = sendUserAccountAccessEmail;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
-if (!EMAIL_USER || !EMAIL_PASS) {
-    // Fail fast in non-test environments if credentials are missing
-    if (process.env.NODE_ENV !== "test") {
-        // eslint-disable-next-line no-console
-        console.warn("[email.service] EMAIL_USER or EMAIL_PASS not set. Email sending will fail until configured.");
-    }
+/** Read at call time so `dotenv` / `load-env` runs before any import of this module. */
+function getSendGridApiKey() {
+    return (process.env.SENDGRID_API_KEY ?? "").trim();
+}
+function getEffectiveFromEmail() {
+    const fromSg = process.env.SENDGRID_FROM_EMAIL?.trim();
+    if (fromSg)
+        return fromSg;
+    const u = process.env.EMAIL_USER?.trim();
+    return u || undefined;
+}
+function mailConfigured() {
+    if (getSendGridApiKey())
+        return !!getEffectiveFromEmail();
+    return !!(process.env.EMAIL_USER?.trim() && process.env.EMAIL_PASS);
+}
+if (!mailConfigured() && process.env.NODE_ENV !== "test") {
+    // eslint-disable-next-line no-console
+    console.warn("[email.service] Set SENDGRID_API_KEY + SENDGRID_FROM_EMAIL (VPS), or EMAIL_USER + EMAIL_PASS (Gmail SMTP).");
 }
 const transporter = nodemailer_1.default.createTransport({
     service: "gmail",
@@ -31,13 +44,99 @@ const transporter = nodemailer_1.default.createTransport({
         user: EMAIL_USER,
         pass: EMAIL_PASS,
     },
+    /** Fail fast; long SMTP hangs cause nginx 504 on routes that await sendMail (e.g. send-otp). */
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
 });
-async function sendOtpEmail(email, otp) {
+function parseFromHeader(from) {
+    const m = from.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+    if (m) {
+        const name = m[1].trim();
+        return { email: m[2].trim(), ...(name ? { name } : {}) };
+    }
+    return { email: from.trim() };
+}
+function requireMailConfig() {
+    if (getSendGridApiKey()) {
+        if (!getEffectiveFromEmail()) {
+            throw new Error("Set SENDGRID_FROM_EMAIL (verified sender in SendGrid) or EMAIL_USER when using SENDGRID_API_KEY.");
+        }
+        return;
+    }
     if (!EMAIL_USER || !EMAIL_PASS) {
         throw new Error("Email credentials are not configured");
     }
+}
+async function sendViaSendGrid(opts) {
+    const fromParsed = parseFromHeader(opts.from);
+    const fromEmail = getEffectiveFromEmail() || fromParsed.email || EMAIL_USER;
+    if (!fromEmail) {
+        throw new Error("Missing sender email for SendGrid.");
+    }
+    const content = [];
+    if (opts.text) {
+        content.push({ type: "text/plain", value: opts.text });
+    }
+    if (opts.html) {
+        content.push({ type: "text/html", value: opts.html });
+    }
+    if (content.length === 0) {
+        throw new Error("Email must include html or text content");
+    }
+    const body = {
+        personalizations: [{ to: [{ email: opts.to }] }],
+        from: {
+            email: fromEmail,
+            ...(fromParsed.name ? { name: fromParsed.name } : {}),
+        },
+        subject: opts.subject,
+        content,
+    };
+    if (opts.attachments?.length) {
+        body.attachments = opts.attachments.map((a) => ({
+            content: a.content.toString("base64"),
+            filename: a.filename,
+            type: a.contentType || "application/octet-stream",
+            disposition: "attachment",
+        }));
+    }
+    const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${getSendGridApiKey()}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(25000),
+    });
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`SendGrid error ${res.status}: ${errText}`);
+    }
+}
+async function dispatchMail(opts) {
+    requireMailConfig();
+    if (getSendGridApiKey()) {
+        await sendViaSendGrid(opts);
+        return;
+    }
     await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+        from: opts.from,
+        to: opts.to,
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+        attachments: opts.attachments?.map((a) => ({
+            filename: a.filename,
+            content: a.content,
+            contentType: a.contentType || "application/octet-stream",
+        })),
+    });
+}
+async function sendOtpEmail(email, otp) {
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: email,
         subject: "Your OTP Verification Code",
         html: `
@@ -57,13 +156,10 @@ async function sendOtpEmail(email, otp) {
     });
 }
 async function sendBadgeEmail(email, badgeDataUrl, attendeeName, eventName) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const base64Data = badgeDataUrl.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
-    await transporter.sendMail({
-        from: EMAIL_USER,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: email,
         subject: `Your Event Badge - ${eventName}`,
         html: `
@@ -86,11 +182,8 @@ async function sendBadgeEmail(email, badgeDataUrl, attendeeName, eventName) {
     });
 }
 async function sendVerificationEmail(email, otp) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: email,
         subject: "Your OTP Verification Code",
         html: `
@@ -131,12 +224,9 @@ function resolveFrontendBase(preferredOrigin) {
 const FRONTEND_BASE = resolveFrontendBase();
 exports.FRONTEND_BASE = FRONTEND_BASE;
 async function sendPasswordResetLinkEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const { toEmail, resetUrl, firstName, roleLabel } = params;
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: toEmail,
         subject: "Reset your password",
         html: `
@@ -156,12 +246,9 @@ async function sendPasswordResetLinkEmail(params) {
 }
 /** OTP for super-admin / sub-admin password reset — sent to their login email. */
 async function sendAdminPasswordResetOtpEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const { toEmail, otp, name, adminKind } = params;
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: toEmail,
         subject: `Your ${adminKind} password reset code`,
         html: `
@@ -182,15 +269,12 @@ async function sendAdminPasswordResetOtpEmail(params) {
 }
 /** Sent after bulk event import finishes — one email per organizer with event titles. */
 async function sendEventImportThankYouEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
     const listHtml = eventTitles
         .map((t) => `<li style="margin: 8px 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">${String(t).replace(/</g, "&lt;")}</li>`)
         .join("");
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: toEmail,
         subject: `Your events were imported (${eventTitles.length})`,
         html: `
@@ -222,28 +306,23 @@ async function sendEventImportThankYouEmail(params) {
     });
 }
 async function sendMarketingEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    const html = params.htmlContent ||
+        `<div style="font-family: Arial, sans-serif; line-height: 1.6; white-space: pre-wrap;">${params.content}</div>`;
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: params.to,
         subject: params.subject,
         text: params.content,
-        html: params.htmlContent ||
-            `<div style="font-family: Arial, sans-serif; line-height: 1.6; white-space: pre-wrap;">${params.content}</div>`,
+        html,
     });
 }
 async function sendEventListingThankYouEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
     const listHtml = eventTitles
         .map((t) => `<li style="margin: 8px 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">${String(t).replace(/</g, "&lt;")}</li>`)
         .join("");
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: toEmail,
         subject: `Event listing update (${eventTitles.length})`,
         html: `
@@ -274,12 +353,9 @@ async function sendEventListingThankYouEmail(params) {
     });
 }
 async function sendUserAccountAccessEmail(params) {
-    if (!EMAIL_USER || !EMAIL_PASS) {
-        throw new Error("Email credentials are not configured");
-    }
     const { toEmail, firstName, roleLabel, setPasswordUrl } = params;
-    await transporter.sendMail({
-        from: `"BizTradeFairs" <${EMAIL_USER}>`,
+    await dispatchMail({
+        from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
         to: toEmail,
         subject: `${roleLabel} account access details`,
         html: `
