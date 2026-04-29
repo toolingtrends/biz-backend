@@ -126,10 +126,12 @@ router.post("/send-otp", async (req, res) => {
     } else if (prismaCode.startsWith("P") || msg.includes("Prisma")) {
       code = "DATABASE";
     }
+    const exposeDetail =
+      process.env.NODE_ENV === "development" || process.env.EXPOSE_EMAIL_ERRORS === "true";
     return res.status(500).json({
       message: "Failed to send OTP",
       ...(code ? { code } : {}),
-      ...(process.env.NODE_ENV === "development" ? { detail: msg.slice(0, 500) } : {}),
+      ...(exposeDetail ? { detail: msg.slice(0, 500) } : {}),
     });
   }
 });

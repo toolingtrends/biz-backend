@@ -72,3 +72,15 @@ npm run test:coverage
 | `npm run db:generate` | Prisma generate |
 | `npm run db:push` | Push schema to DB (no migration history) |
 | `npm run db:migrate` | Run migrations |
+
+## Small VPS (512MB) + PM2
+
+`npm run build` (Prisma + `tsc`) can hit **JavaScript heap out of memory** on a 512MB droplet. Options:
+
+1. **Build on a larger machine or CI**, then deploy only `dist/`, `node_modules/`, `package.json`, and `.env`.
+2. **Or** on the server, before build: `export NODE_OPTIONS=--max-old-space-size=384` then `npm run build` (add **swap** if the kernel OOM-kills the process).
+3. **Run** the API with a bounded heap so the OS keeps headroom: use the included PM2 file — `pm2 start ecosystem.config.cjs` (sets `--max-old-space-size=384` and `max_memory_restart`). After editing `.env`: `pm2 restart biz-backend --update-env`.
+
+### SendGrid `EMAIL_VENDOR` on `/send-otp`
+
+That code means SendGrid returned an error (bad API key, unverified sender, etc.). Check **server** logs for `[email.service] SendGrid HTTP`. To return a short `detail` in the JSON response temporarily, set `EXPOSE_EMAIL_ERRORS=true` in `.env` and restart PM2 with `--update-env` (disable after debugging).
