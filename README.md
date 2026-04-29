@@ -50,6 +50,7 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 - Schema: `prisma/schema.prisma`
 - All IDs are `uuid()`; no MongoDB ObjectId.
 - OTP is stored in Prisma model `Otp` (table `otps`), not Mongoose.
+- **`DATABASE_URL` (pooler):** For a **long‑running Express** process, do **not** use `connection_limit=1` in the URL (it causes Prisma **P2024** when multiple queries run at once). Use at least **`connection_limit=5`**, or omit it and let the app normalize a lone `1` → `5` at startup (see `src/config/prisma.ts`). Keep **`DIRECT_URL`** as the non‑pooler URL for migrations.
 
 ## Testing
 
