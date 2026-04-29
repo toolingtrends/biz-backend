@@ -22,6 +22,11 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 
    - **Vercel previews:** each deployment gets a different `*.vercel.app` URL. Either add every URL to `CORS_ORIGIN`, or set **`CORS_ALLOW_VERCEL_APP=true`** (allows all `https://*.vercel.app` origins — still requires JWT for protected routes).
 
+   - **Email (OTP, password reset):** On many VPS providers, **outbound SMTP to Gmail (ports 465/587) is blocked**, which causes long timeouts. Prefer **SendGrid** over HTTPS (port 443):
+     - `SENDGRID_API_KEY` — API key from SendGrid.
+     - `SENDGRID_FROM_EMAIL` — sender address **verified** in SendGrid (single sender or domain authentication).
+     - If unset, the app falls back to **Gmail SMTP** using `EMAIL_USER` / `EMAIL_PASS` (app password).
+
 3. **Database**
    - Create tables (no migrations): `npx prisma db push`
    - Or use migrations: `npx prisma migrate dev --name init`
