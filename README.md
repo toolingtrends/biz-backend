@@ -22,10 +22,10 @@ Express + TypeScript API. Uses **PostgreSQL** (Neon) and Prisma. No MongoDB/Mong
 
    - **Vercel previews:** each deployment gets a different `*.vercel.app` URL. Either add every URL to `CORS_ORIGIN`, or set **`CORS_ALLOW_VERCEL_APP=true`** (allows all `https://*.vercel.app` origins — still requires JWT for protected routes).
 
-   - **Email (OTP, password reset):** On many VPS providers, **outbound SMTP to Gmail (ports 465/587) is blocked**, which causes long timeouts. Prefer **SendGrid** over HTTPS (port 443):
-     - `SENDGRID_API_KEY` — API key from SendGrid.
-     - `SENDGRID_FROM_EMAIL` — sender address **verified** in SendGrid (single sender or domain authentication).
-     - If unset, the app falls back to **Gmail SMTP** using `EMAIL_USER` / `EMAIL_PASS` (app password).
+   - **Email (OTP, password reset):** On many VPS providers, **outbound SMTP to Gmail (ports 465/587) is blocked**. Recommended: **[Resend](https://resend.com)** over HTTPS:
+     - `RESEND_API_KEY` — API key from Resend (`re_…`).
+     - `RESEND_FROM_EMAIL` — sender on a **domain you verified in Resend** (e.g. `noreply@biztradefairs.com`). Use the same address in the Resend dashboard for DNS.
+     - If `RESEND_API_KEY` is unset, the app can use **SendGrid** (`SENDGRID_API_KEY` + `SENDGRID_FROM_EMAIL`), or **Gmail SMTP** (`EMAIL_USER` / `EMAIL_PASS`).
 
 3. **Database**
    - Create tables (no migrations): `npx prisma db push`
@@ -84,6 +84,6 @@ npm run test:coverage
 
 The app loads **`<project>/biz-backend/.env`** from the install directory (not `process.cwd()`), so SendGrid/DB keys in `~/biz-backend/.env` are used even if PM2 was started from another directory.
 
-### SendGrid `EMAIL_VENDOR` on `/send-otp`
+### SendGrid / Resend `EMAIL_VENDOR` on `/send-otp`
 
-That code means SendGrid returned an error (bad API key, unverified sender, etc.). Check **server** logs for `[email.service] SendGrid HTTP`. **`EMAIL_NETWORK`** means the request never reached a proper HTTP error (timeout connecting to SendGrid from the VPS—firewall, routing, or congestion); long connect timeouts were raised in `email.service.ts`. To return a short `detail` in the JSON response temporarily, set `EXPOSE_EMAIL_ERRORS=true` in `.env` and restart PM2 with `--update-env` (disable after debugging).
+That code means the email provider returned an API error (bad key, unverified sender/domain, etc.). Check logs for `[email.service] Resend API error` or `[email.service] SendGrid HTTP`. **`EMAIL_NETWORK`** means the HTTP client could not complete the request (timeout, etc.). Set `EXPOSE_EMAIL_ERRORS=true` temporarily for JSON `detail` (then disable).

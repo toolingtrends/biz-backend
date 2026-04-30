@@ -1,15 +1,29 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { Agent, fetch as undiciFetch } from "undici";
 
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 
 /** Read at call time so `dotenv` / `load-env` runs before any import of this module. */
+function getResendApiKey(): string {
+  return (process.env.RESEND_API_KEY ?? "").trim();
+}
+
+function getResendFromEmail(): string | undefined {
+  return process.env.RESEND_FROM_EMAIL?.trim();
+}
+
 function getSendGridApiKey(): string {
   return (process.env.SENDGRID_API_KEY ?? "").trim();
 }
 
+/** Bare email used inside `"BizTradeFairs" <…>` — Resend vs SendGrid vs SMTP. */
 function getEffectiveFromEmail(): string | undefined {
+  if (getResendApiKey()) {
+    const r = getResendFromEmail();
+    if (r) return r;
+  }
   const fromSg = process.env.SENDGRID_FROM_EMAIL?.trim();
   if (fromSg) return fromSg;
   const u = process.env.EMAIL_USER?.trim();
@@ -17,6 +31,7 @@ function getEffectiveFromEmail(): string | undefined {
 }
 
 function mailConfigured(): boolean {
+  if (getResendApiKey()) return !!getResendFromEmail();
   if (getSendGridApiKey()) return !!getEffectiveFromEmail();
   return !!(process.env.EMAIL_USER?.trim() && process.env.EMAIL_PASS);
 }
@@ -24,7 +39,7 @@ function mailConfigured(): boolean {
 if (!mailConfigured() && process.env.NODE_ENV !== "test") {
   // eslint-disable-next-line no-console
   console.warn(
-    "[email.service] Set SENDGRID_API_KEY + SENDGRID_FROM_EMAIL (VPS), or EMAIL_USER + EMAIL_PASS (Gmail SMTP).",
+    "[email.service] Set RESEND_API_KEY + RESEND_FROM_EMAIL (e.g. noreply@yourdomain.com), or SENDGRID_* , or EMAIL_USER + EMAIL_PASS (Gmail SMTP).",
   );
 }
 
@@ -58,6 +73,14 @@ function parseFromHeader(from: string): { name?: string; email: string } {
 }
 
 function requireMailConfig(): void {
+  if (getResendApiKey()) {
+    if (!getResendFromEmail()) {
+      throw new Error(
+        "Set RESEND_FROM_EMAIL (address on a domain verified in Resend), e.g. noreply@biztradefairs.com.",
+      );
+    }
+    return;
+  }
   if (getSendGridApiKey()) {
     if (!getEffectiveFromEmail()) {
       throw new Error(
@@ -72,6 +95,65 @@ function requireMailConfig(): void {
 }
 
 type MailAttachment = { filename: string; content: Buffer; contentType?: string };
+
+async function sendViaResend(opts: {
+  from: string;
+  to: string;
+  subject: string;
+  html?: string;
+  text?: string;
+  attachments?: MailAttachment[];
+}): Promise<void> {
+  const apiKey = getResendApiKey();
+  if (!opts.html && !opts.text) {
+    throw new Error("Email must include html or text content");
+  }
+
+  const resend = new Resend(apiKey);
+  const base = {
+    from: opts.from.trim(),
+    to: opts.to,
+    subject: opts.subject,
+  };
+  const attachments =
+    opts.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })) ?? [];
+
+  let result;
+  try {
+    if (opts.html) {
+      result = await resend.emails.send({
+        ...base,
+        html: opts.html,
+        ...(opts.text ? { text: opts.text } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
+    } else {
+      result = await resend.emails.send({
+        ...base,
+        text: opts.text!,
+        ...(attachments.length ? { attachments } : {}),
+      });
+    }
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    // eslint-disable-next-line no-console
+    console.error("[email.service] Resend request failed:", err);
+    throw new Error(`Resend network error: ${err.message}`);
+  }
+
+  if (result.error) {
+    const er = result.error;
+    // eslint-disable-next-line no-console
+    console.error("[email.service] Resend API error:", er);
+    throw new Error(
+      `Resend error ${er.statusCode ?? "?"}: ${er.message}${er.name ? ` (${er.name})` : ""}`,
+    );
+  }
+}
 
 async function sendViaSendGrid(opts: {
   from: string;
@@ -162,6 +244,10 @@ async function dispatchMail(opts: {
   attachments?: MailAttachment[];
 }): Promise<void> {
   requireMailConfig();
+  if (getResendApiKey()) {
+    await sendViaResend(opts);
+    return;
+  }
   if (getSendGridApiKey()) {
     await sendViaSendGrid(opts);
     return;

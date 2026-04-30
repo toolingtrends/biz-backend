@@ -119,8 +119,12 @@ router.post("/send-otp", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     const prismaCode = typeof err === "object" && err && "code" in err ? String((err as { code?: string }).code) : "";
     let code: string | undefined;
-    if (msg.includes("SendGrid network error")) {
+    if (msg.includes("Resend network error")) {
       code = "EMAIL_NETWORK";
+    } else if (msg.includes("SendGrid network error")) {
+      code = "EMAIL_NETWORK";
+    } else if (msg.includes("Resend error") || msg.includes("Resend")) {
+      code = "EMAIL_VENDOR";
     } else if (msg.includes("SendGrid error") || msg.includes("SendGrid")) {
       code = "EMAIL_VENDOR";
     } else if (msg.includes("credentials are not configured") || msg.includes("sender email")) {
