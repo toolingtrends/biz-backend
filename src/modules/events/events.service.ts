@@ -116,6 +116,9 @@ export async function listEvents(params: ListEventsParams) {
   const [events, total] = await Promise.all([
     prisma.event.findMany({
       where,
+      omit: {
+        description: true,
+      },
       include: {
         organizer: {
           select: {
@@ -184,7 +187,8 @@ export async function listEvents(params: ListEventsParams) {
     return {
       id: event.id,
       title: event.title,
-      description: event.description,
+      /** Full body omitted at DB layer for listing — cards use short text only. */
+      description: event.shortDescription ?? "",
       shortDescription: event.shortDescription,
       subTitle: event.subTitle ?? event.shortDescription,
       edition: event.edition,

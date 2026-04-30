@@ -84,6 +84,15 @@ npm run test:coverage
 
 The app loads **`<project>/biz-backend/.env`** from the install directory (not `process.cwd()`), so SendGrid/DB keys in `~/biz-backend/.env` are used even if PM2 was started from another directory.
 
+## Latency (Vercel + DigitalOcean + Neon)
+
+- **Region:** Put **Neon** in the same (or closest) region as the **DigitalOcean droplet**. Cross-region adds noticeable RTT on every Prisma query.
+- **Neon:** Use the **pooler** in `DATABASE_URL` and avoid `connection_limit=1` for this long-running API (see DB section).
+- **Droplet:** **512MB / 1 vCPU** is tight under concurrent traffic; more RAM/CPU often beats only upgrading Neon.
+- **Frontend:** Public GET routes such as **`/api/events`**, search, stats, and recent events use **short HTTP cache / Next `revalidate`** so Vercel does not call the droplet on every page view.
+
+After adding a Prisma `@@index` (e.g. on `events`), run **`npx prisma db push`** or your migration flow against production.
+
 ### SendGrid / Resend `EMAIL_VENDOR` on `/send-otp`
 
 That code means the email provider returned an API error (bad key, unverified sender/domain, etc.). Check logs for `[email.service] Resend API error` or `[email.service] SendGrid HTTP`. **`EMAIL_NETWORK`** means the HTTP client could not complete the request (timeout, etc.). Set `EXPOSE_EMAIL_ERRORS=true` temporarily for JSON `detail` (then disable).

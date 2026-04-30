@@ -573,6 +573,7 @@ model Event {
   conferences      Conference[]
   exhibitorManuals ExhibitorManual[]
 
+  @@index([status, isPublic, createdAt])
   @@map("events")
 }
 
