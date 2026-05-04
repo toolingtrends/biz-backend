@@ -17,6 +17,12 @@ const statusMap: Record<string, string> = {
   COMPLETED: "Approved",
 };
 
+function trimOrganizerEventText(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
 export interface ListEventsParams {
   page?: number;
   limit?: number;
@@ -1561,26 +1567,19 @@ export async function updateEventByOrganizer(
   });
   if (!existingEvent) return { error: "NOT_FOUND" as const };
 
-  const resolvedShortDescription = (
-    body.shortDescription ??
-    body.subTitle ??
-    body.eventSubTitle ??
-    body.slug ??
-    existingEvent.shortDescription ??
-    null
-  ) as string | null;
+  const nextShortDescription =
+    "shortDescription" in body
+      ? trimOrganizerEventText(body.shortDescription)
+      : existingEvent.shortDescription;
+
+  const nextSubTitle =
+    "subTitle" in body ? trimOrganizerEventText(body.subTitle) : existingEvent.subTitle;
 
   const eventUpdateData: Record<string, unknown> = {
     title: body.title,
     description: body.description,
-    shortDescription:
-      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-        ? String(resolvedShortDescription).trim()
-        : null,
-    subTitle:
-      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-        ? String(resolvedShortDescription).trim()
-        : existingEvent.subTitle ?? null,
+    shortDescription: nextShortDescription,
+    subTitle: nextSubTitle,
     edition:
       body.edition != null && String(body.edition).trim() !== ""
         ? String(body.edition).trim()

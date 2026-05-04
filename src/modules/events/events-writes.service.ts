@@ -10,6 +10,12 @@ import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import type { EventStatus, SessionType, SessionStatus, User } from "@prisma/client";
 import type { UserRole } from "@prisma/client";
 
+function trimTextField(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
 function parseCategory(category: unknown): string[] {
   if (Array.isArray(category)) {
     return category.filter(Boolean) as string[];
@@ -429,30 +435,28 @@ export async function createEventAdmin(params: CreateEventAdminParams) {
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "");
 
-  const resolvedShortDescription = (
-    body.shortDescription ??
-    body.subTitle ??
-    body.eventSubTitle ??
-    body.slug ??
-    null
-  ) as string | null;
+  const shortDescriptionExplicit = trimTextField(body.shortDescription);
+  const subTitleExplicit = trimTextField(body.subTitle ?? body.eventSubTitle);
+
+  const descriptionExcerpt =
+    body.description && String(body.description).trim().length > 0
+      ? String(body.description).substring(0, 200).trim()
+      : null;
+
+  /** Short description: explicit body value, else excerpt from full description — never copy subtitle. */
+  const shortDescription =
+    shortDescriptionExplicit ??
+    (descriptionExcerpt && descriptionExcerpt.length > 0 ? descriptionExcerpt : null);
+
+  /** Subtitle is independent from shortDescription. */
+  const subTitle = subTitleExplicit ?? null;
 
   const eventData: any = {
     id: eventId,
     title: body.title,
     description: body.description,
-    shortDescription:
-      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-        ? String(resolvedShortDescription).trim()
-        : body.description
-          ? String(body.description).substring(0, 200)
-          : null,
-    subTitle:
-      resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-        ? String(resolvedShortDescription).trim()
-        : body.description
-          ? String(body.description).substring(0, 200)
-          : null,
+    shortDescription,
+    subTitle,
     edition: body.edition != null && String(body.edition).trim() !== "" ? String(body.edition).trim() : null,
     slug,
     status:
