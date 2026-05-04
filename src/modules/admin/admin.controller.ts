@@ -145,9 +145,6 @@ export async function adminUpdateEventHandler(req: Request, res: Response) {
     if (body.layout !== undefined) {
       body.layoutPlan = body.layout;
     }
-    if (body.subTitle !== undefined && body.shortDescription === undefined) {
-      body.shortDescription = body.subTitle;
-    }
     if (body.maxCapacity !== undefined) {
       body.maxAttendees = body.maxCapacity;
     }

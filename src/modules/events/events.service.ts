@@ -196,7 +196,7 @@ export async function listEvents(params: ListEventsParams) {
       /** Full body omitted at DB layer for listing — cards use short text only. */
       description: event.shortDescription ?? "",
       shortDescription: event.shortDescription,
-      subTitle: event.subTitle ?? event.shortDescription,
+      subTitle: event.subTitle ?? null,
       edition: event.edition,
       slug: event.slug,
       startDate: event.startDate.toISOString(),
@@ -520,7 +520,7 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
     ...event,
     title: event.title || "Untitled Event",
     description: event.description || event.shortDescription || "",
-    subTitle: event.subTitle ?? event.shortDescription ?? null,
+    subTitle: event.subTitle ?? null,
     edition: event.edition || null,
     availableTickets,
     isAvailable: availableTickets > 0 && new Date() < event.registrationEnd,
@@ -1706,7 +1706,7 @@ export async function updateEventByOrganizer(
   return {
     event: {
       ...updatedEvent,
-      subTitle: updatedEvent.subTitle ?? updatedEvent.shortDescription ?? null,
+      subTitle: updatedEvent.subTitle ?? null,
       edition: updatedEvent.edition || null,
     },
   };
