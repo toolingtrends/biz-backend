@@ -44,6 +44,12 @@ const statusMap = {
     REJECTED: "Rejected",
     COMPLETED: "Approved",
 };
+function trimOrganizerEventText(v) {
+    if (v == null)
+        return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+}
 async function listEvents(params) {
     const page = params.page && params.page > 0 ? params.page : 1;
     const limit = params.limit && params.limit > 0 ? params.limit : 12;
@@ -189,7 +195,7 @@ async function listEvents(params) {
             /** Full body omitted at DB layer for listing — cards use short text only. */
             description: event.shortDescription ?? "",
             shortDescription: event.shortDescription,
-            subTitle: event.subTitle ?? event.shortDescription,
+            subTitle: event.subTitle ?? null,
             edition: event.edition,
             slug: event.slug,
             startDate: event.startDate.toISOString(),
@@ -483,7 +489,7 @@ async function getEventByIdentifier(id, viewerUserId) {
         ...event,
         title: event.title || "Untitled Event",
         description: event.description || event.shortDescription || "",
-        subTitle: event.subTitle ?? event.shortDescription ?? null,
+        subTitle: event.subTitle ?? null,
         edition: event.edition || null,
         availableTickets,
         isAvailable: availableTickets > 0 && new Date() < event.registrationEnd,
@@ -1380,21 +1386,15 @@ async function updateEventByOrganizer(organizerId, eventId, body) {
     });
     if (!existingEvent)
         return { error: "NOT_FOUND" };
-    const resolvedShortDescription = (body.shortDescription ??
-        body.subTitle ??
-        body.eventSubTitle ??
-        body.slug ??
-        existingEvent.shortDescription ??
-        null);
+    const nextShortDescription = "shortDescription" in body
+        ? trimOrganizerEventText(body.shortDescription)
+        : existingEvent.shortDescription;
+    const nextSubTitle = "subTitle" in body ? trimOrganizerEventText(body.subTitle) : existingEvent.subTitle;
     const eventUpdateData = {
         title: body.title,
         description: body.description,
-        shortDescription: resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-            ? String(resolvedShortDescription).trim()
-            : null,
-        subTitle: resolvedShortDescription && String(resolvedShortDescription).trim().length > 0
-            ? String(resolvedShortDescription).trim()
-            : existingEvent.subTitle ?? null,
+        shortDescription: nextShortDescription,
+        subTitle: nextSubTitle,
         edition: body.edition != null && String(body.edition).trim() !== ""
             ? String(body.edition).trim()
             : existingEvent.edition,
@@ -1514,7 +1514,7 @@ async function updateEventByOrganizer(organizerId, eventId, body) {
     return {
         event: {
             ...updatedEvent,
-            subTitle: updatedEvent.subTitle ?? updatedEvent.shortDescription ?? null,
+            subTitle: updatedEvent.subTitle ?? null,
             edition: updatedEvent.edition || null,
         },
     };

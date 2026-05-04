@@ -167,7 +167,7 @@ async function adminListEvents(params) {
         title: event.title,
         description: event.description,
         shortDescription: event.shortDescription,
-        subTitle: event.subTitle ?? event.shortDescription,
+        subTitle: event.subTitle ?? null,
         edition: event.edition ?? null,
         startDate: event.startDate.toISOString(),
         endDate: event.endDate.toISOString(),
@@ -277,7 +277,7 @@ async function adminGetEventById(id) {
         return null;
     return {
         ...event,
-        subTitle: event.subTitle ?? event.shortDescription,
+        subTitle: event.subTitle ?? null,
         edition: event.edition ?? null,
     };
 }
@@ -344,12 +344,6 @@ async function adminUpdateEvent(id, data) {
         if (data[key] !== undefined) {
             raw[key] = data[key];
         }
-    }
-    if (raw.shortDescription === undefined && raw.subTitle !== undefined) {
-        raw.shortDescription = raw.subTitle;
-    }
-    if (raw.subTitle === undefined && raw.shortDescription !== undefined) {
-        raw.subTitle = raw.shortDescription;
     }
     // Map frontend status labels to Prisma EventStatus enum (so "Approved" -> PUBLISHED, etc.)
     if (raw.status !== undefined && typeof raw.status === "string") {

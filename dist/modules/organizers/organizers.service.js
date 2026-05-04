@@ -64,25 +64,39 @@ async function listOrganizers(options) {
     const rows = requireProfileImage
         ? organizers.filter((o) => (0, profile_image_1.hasPublicProfileImage)(o.avatar))
         : organizers;
-    const organizersWithStats = await Promise.all(rows.map(async (organizer) => {
-        const eventIds = organizer.organizedEvents.map((e) => e.id);
-        const attendeeCount = await prisma_1.default.eventRegistration.count({
+    /** One grouped query instead of 2×N concurrent queries (avoids exhausting the DB pool on small VPS). */
+    const allEventIds = [...new Set(rows.flatMap((o) => o.organizedEvents.map((e) => e.id)))];
+    const statsByEventId = new Map();
+    if (allEventIds.length > 0) {
+        const grouped = await prisma_1.default.eventRegistration.groupBy({
+            by: ["eventId"],
             where: {
-                eventId: { in: eventIds },
+                eventId: { in: allEventIds },
                 status: "CONFIRMED",
             },
+            _count: { _all: true },
+            _sum: { totalAmount: true },
         });
+        for (const g of grouped) {
+            statsByEventId.set(g.eventId, {
+                registrations: g._count._all,
+                revenue: g._sum.totalAmount ?? 0,
+            });
+        }
+    }
+    const organizersWithStats = rows.map((organizer) => {
+        const eventIds = organizer.organizedEvents.map((e) => e.id);
+        let attendeeCount = 0;
+        let totalRevenue = 0;
+        for (const id of eventIds) {
+            const s = statsByEventId.get(id);
+            if (s) {
+                attendeeCount += s.registrations;
+                totalRevenue += s.revenue;
+            }
+        }
         const foundedYear = organizer.founded ? parseInt(organizer.founded) : new Date().getFullYear();
         const yearsOfExperience = Number.isNaN(foundedYear) ? 0 : new Date().getFullYear() - foundedYear;
-        const revenueData = await prisma_1.default.eventRegistration.aggregate({
-            where: {
-                eventId: { in: eventIds },
-                status: "CONFIRMED",
-            },
-            _sum: {
-                totalAmount: true,
-            },
-        });
         const displayName = (0, display_name_1.getDisplayName)({
             role: "ORGANIZER",
             firstName: organizer.firstName,
@@ -103,7 +117,7 @@ async function listOrganizers(options) {
             company: organizer.organizationName || "",
             image: requireProfileImage
                 ? organizer.avatar ?? ""
-                : organizer.avatar || "/placeholder.svg?height=100&width=100&text=Org",
+                : organizer.avatar || "/city/c4.jpg",
             avgRating: organizer.averageRating || 0,
             totalReviews: organizer.totalReviews || 0,
             headquarters: organizer.headquarters || organizer.location || "Not specified",
@@ -122,12 +136,12 @@ async function listOrganizers(options) {
             active: organizer.isActive || false,
             featured: false,
             totalAttendees: attendeeCount,
-            totalRevenue: revenueData._sum.totalAmount || 0,
+            totalRevenue,
             successRate: organizer.organizedEvents.length > 0 ? 95 : 0,
             joinDate: organizer.createdAt.toISOString().split("T")[0],
             lastActive: organizer.updatedAt.toISOString().split("T")[0],
         };
-    }));
+    });
     return organizersWithStats;
 }
 // ---------- Single organizer ----------
