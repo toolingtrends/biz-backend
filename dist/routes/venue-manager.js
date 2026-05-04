@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const prisma_1 = __importDefault(require("../config/prisma"));
+const iana_timezones_1 = require("../utils/iana-timezones");
 const router = (0, express_1.Router)();
 async function syncLocationMasterFromVenue(input) {
     const countryName = String(input.country ?? "").trim();
@@ -113,6 +114,7 @@ router.get("/venue-manager/:id", async (req, res) => {
                 state: venueManager.venueState ?? "",
                 country: venueManager.venueCountry ?? "",
                 zipCode: venueManager.venueZipCode ?? "",
+                timezone: venueManager.venueTimezone ?? "",
                 coordinates: {
                     lat: venueManager.latitude ?? 0,
                     lng: venueManager.longitude ?? 0,
@@ -167,7 +169,7 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
     try {
         const { organizerId } = req.params;
         const body = req.body ?? {};
-        const { venueName, logo, contactPerson, firstName, lastName, email, mobile, tempPassword, venueAddress, venueCity, venueState, venueZipCode, venueCountry, website, venueDescription, maxCapacity, totalHalls, activeBookings, averageRating, totalReviews, amenities, meetingSpaces, } = body;
+        const { venueName, logo, contactPerson, firstName, lastName, email, mobile, tempPassword, venueAddress, venueCity, venueState, venueZipCode, venueCountry, website, venueDescription, maxCapacity, totalHalls, activeBookings, averageRating, totalReviews, amenities, meetingSpaces, venueTimezone, } = body;
         if (!organizerId) {
             return res
                 .status(400)
@@ -217,6 +219,7 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
                 error: "A venue manager with this email already exists",
             });
         }
+        const tzCreate = (0, iana_timezones_1.normalizeVenueTimezoneInput)(venueTimezone);
         const venueManager = await prisma_1.default.user.create({
             data: {
                 role: "VENUE_MANAGER",
@@ -247,6 +250,7 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
                 totalReviews: totalReviews ? parseInt(String(totalReviews), 10) : 0,
                 amenities: amenities || [],
                 organizerIdForVenueManager: organizerId,
+                ...(tzCreate !== undefined ? { venueTimezone: tzCreate } : {}),
             },
         });
         await syncLocationMasterFromVenue({
@@ -299,7 +303,7 @@ router.put("/venue-manager/:id", async (req, res) => {
                 .status(400)
                 .json({ success: false, error: "Invalid venue manager ID" });
         }
-        const { venueName, logo, contactPerson, email, mobile, address, city, state, country, zipCode, website, description, maxCapacity, totalHalls, activeBookings, averageRating, totalReviews, amenities, meetingSpaces, venueImages, venueVideos, floorPlans, virtualTour, latitude, longitude, basePrice, currency, } = body;
+        const { venueName, logo, contactPerson, email, mobile, address, city, state, country, zipCode, website, description, maxCapacity, totalHalls, activeBookings, averageRating, totalReviews, amenities, meetingSpaces, venueImages, venueVideos, floorPlans, virtualTour, latitude, longitude, basePrice, currency, timezone, venueTimezone: venueTimezoneBody, } = body;
         let firstName = "";
         let lastName = "";
         if (contactPerson) {
@@ -307,6 +311,10 @@ router.put("/venue-manager/:id", async (req, res) => {
             firstName = parts[0] || "";
             lastName = parts.slice(1).join(" ") || "";
         }
+        const rawVenueTz = timezone !== undefined ? timezone : venueTimezoneBody;
+        const tzUpdate = rawVenueTz !== undefined
+            ? (0, iana_timezones_1.normalizeVenueTimezoneInput)(rawVenueTz)
+            : undefined;
         const updatedVenue = await prisma_1.default.user.update({
             where: { id },
             data: {
@@ -359,6 +367,7 @@ router.put("/venue-manager/:id", async (req, res) => {
                 longitude: longitude !== undefined ? parseFloat(String(longitude)) : undefined,
                 basePrice: basePrice !== undefined ? parseFloat(String(basePrice)) : undefined,
                 venueCurrency: currency ?? undefined,
+                ...(tzUpdate !== undefined ? { venueTimezone: tzUpdate } : {}),
             },
         });
         await syncLocationMasterFromVenue({
@@ -397,6 +406,7 @@ router.put("/venue-manager/:id", async (req, res) => {
             longitude: updatedVenue.longitude || 0,
             basePrice: updatedVenue.basePrice || 0,
             currency: updatedVenue.venueCurrency || "₹",
+            timezone: updatedVenue.venueTimezone || "",
         };
         return res.json({
             success: true,

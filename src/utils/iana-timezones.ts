@@ -4,7 +4,14 @@ export function normalizeVenueTimezoneInput(raw: unknown): string | null | undef
   const s = String(raw ?? "").trim()
   if (!s) return null
   try {
-    const allowed = new Set(Intl.supportedValuesOf("timeZone") as string[])
+    const intl = Intl as typeof Intl & {
+      supportedValuesOf?(key: "timeZone"): string[]
+    }
+    const list =
+      typeof intl.supportedValuesOf === "function"
+        ? intl.supportedValuesOf.call(Intl, "timeZone")
+        : []
+    const allowed = new Set(list)
     if (allowed.has(s)) return s
   } catch {
     if (s === "UTC") return "UTC"
