@@ -1,5 +1,6 @@
 import { Router } from "express";
 import prisma from "../config/prisma";
+import { normalizeVenueTimezoneInput } from "../utils/iana-timezones";
 
 const router = Router();
 
@@ -120,6 +121,7 @@ router.get("/venue-manager/:id", async (req, res) => {
         state: venueManager.venueState ?? "",
         country: venueManager.venueCountry ?? "",
         zipCode: venueManager.venueZipCode ?? "",
+        timezone: venueManager.venueTimezone ?? "",
         coordinates: {
           lat: venueManager.latitude ?? 0,
           lng: venueManager.longitude ?? 0,
@@ -199,6 +201,7 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
       totalReviews,
       amenities,
       meetingSpaces,
+      venueTimezone,
     } = body;
 
     if (!organizerId) {
@@ -259,6 +262,8 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
       });
     }
 
+    const tzCreate = normalizeVenueTimezoneInput(venueTimezone);
+
     const venueManager = await prisma.user.create({
       data: {
         role: "VENUE_MANAGER",
@@ -289,6 +294,7 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
         totalReviews: totalReviews ? parseInt(String(totalReviews), 10) : 0,
         amenities: amenities || [],
         organizerIdForVenueManager: organizerId,
+        ...(tzCreate !== undefined ? { venueTimezone: tzCreate } : {}),
       },
     });
 
@@ -374,6 +380,8 @@ router.put("/venue-manager/:id", async (req, res) => {
       longitude,
       basePrice,
       currency,
+      timezone,
+      venueTimezone: venueTimezoneBody,
     } = body;
 
     let firstName = "";
@@ -383,6 +391,13 @@ router.put("/venue-manager/:id", async (req, res) => {
       firstName = parts[0] || "";
       lastName = parts.slice(1).join(" ") || "";
     }
+
+    const rawVenueTz =
+      timezone !== undefined ? timezone : venueTimezoneBody;
+    const tzUpdate =
+      rawVenueTz !== undefined
+        ? normalizeVenueTimezoneInput(rawVenueTz)
+        : undefined;
 
     const updatedVenue = await prisma.user.update({
       where: { id },
@@ -445,6 +460,7 @@ router.put("/venue-manager/:id", async (req, res) => {
         basePrice:
           basePrice !== undefined ? parseFloat(String(basePrice)) : undefined,
         venueCurrency: currency ?? undefined,
+        ...(tzUpdate !== undefined ? { venueTimezone: tzUpdate } : {}),
       },
     });
 
@@ -489,6 +505,7 @@ router.put("/venue-manager/:id", async (req, res) => {
       longitude: updatedVenue.longitude || 0,
       basePrice: updatedVenue.basePrice || 0,
       currency: updatedVenue.venueCurrency || "₹",
+      timezone: updatedVenue.venueTimezone || "",
     };
 
     return res.json({

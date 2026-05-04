@@ -360,6 +360,8 @@ model User {
   venueCurrency    String  @default("USD")
   latitude         Float?
   longitude        Float?
+  /// IANA time zone for this venue (e.g. Asia/Kolkata); used when scheduling events at the venue.
+  venueTimezone    String?
 
   speakingExperience String?
 
