@@ -2,8 +2,10 @@ import prisma from "../../config/prisma";
 import { EventStatus } from "@prisma/client";
 import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import { uploadImage } from "../../services/cloudinary.service";
+import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { resolveFrontendBase, sendEventListingThankYouEmail } from "../../services/email.service";
+import { generateTemporaryPortalPassword } from "../../utils/temporary-portal-password";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -837,30 +839,36 @@ export async function adminSendEventListingEmail(params: { organizerEmail: strin
 
   const organizer = await prisma.user.findFirst({
     where: { email: organizerEmail, role: "ORGANIZER" },
-    select: { id: true, firstName: true, emailVerified: true },
+    select: { id: true, firstName: true },
   });
   if (!organizer) {
     throw new Error("Organizer not found");
   }
 
-  let setPasswordUrl: string | undefined;
-  // Requirement: show "Set Password" only when email is not verified.
-  if (!organizer.emailVerified) {
-    const resetToken = randomBytes(32).toString("hex");
-    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await prisma.user.update({
-      where: { id: organizer.id },
-      data: { resetToken, resetTokenExpiry },
-    });
-    const base = resolveFrontendBase().replace(/\/$/, "");
-    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
-  }
+  const plainTempPassword = generateTemporaryPortalPassword();
+  const hashedPassword = await bcrypt.hash(plainTempPassword, 12);
+  const resetToken = randomBytes(32).toString("hex");
+  const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: organizer.id },
+    data: {
+      password: hashedPassword,
+      resetToken,
+      resetTokenExpiry,
+      loginAttempts: 0,
+    },
+  });
+
+  const base = resolveFrontendBase().replace(/\/$/, "");
+  const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
 
   await sendEventListingThankYouEmail({
     toEmail: organizerEmail,
     firstName: organizer.firstName || "there",
     eventTitles,
-    setPasswordUrl,
+    temporaryPassword: plainTempPassword,
+    resetPasswordUrl,
   });
 }
 

@@ -1,8 +1,10 @@
 import prisma from "../../../config/prisma";
 import { parseListQuery } from "../../../lib/admin-response";
 import type { UserRole } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../services/email.service";
+import { generateTemporaryPortalPassword } from "../../../utils/temporary-portal-password";
 
 const ROLE: UserRole = "ORGANIZER";
 
@@ -211,27 +213,34 @@ export async function sendOrganizerAccountEmail(input: { organizerId?: string; o
       ...(organizerId ? { id: organizerId } : {}),
       ...(organizerEmail ? { email: organizerEmail } : {}),
     },
-    select: { id: true, email: true, firstName: true, emailVerified: true },
+    select: { id: true, email: true, firstName: true },
   });
   if (!organizer?.email) throw new Error("Organizer not found");
 
-  let setPasswordUrl: string | undefined;
-  if (!organizer.emailVerified) {
-    const resetToken = randomBytes(32).toString("hex");
-    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await prisma.user.update({
-      where: { id: organizer.id },
-      data: { resetToken, resetTokenExpiry },
-    });
-    const base = resolveFrontendBase().replace(/\/$/, "");
-    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizer.email)}`;
-  }
+  const plainTempPassword = generateTemporaryPortalPassword();
+  const hashedPassword = await bcrypt.hash(plainTempPassword, 12);
+  const resetToken = randomBytes(32).toString("hex");
+  const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: organizer.id },
+    data: {
+      password: hashedPassword,
+      resetToken,
+      resetTokenExpiry,
+      loginAttempts: 0,
+    },
+  });
+
+  const base = resolveFrontendBase().replace(/\/$/, "");
+  const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizer.email)}`;
 
   await sendUserAccountAccessEmail({
     toEmail: organizer.email,
     firstName: organizer.firstName || "there",
     roleLabel: "Organizer",
-    setPasswordUrl,
+    temporaryPassword: plainTempPassword,
+    resetPasswordUrl,
   });
 }
 

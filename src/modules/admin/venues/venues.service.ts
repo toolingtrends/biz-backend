@@ -1,8 +1,10 @@
 import prisma from "../../../config/prisma";
 import { parseListQuery } from "../../../lib/admin-response";
 import type { UserRole } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../services/email.service";
+import { generateTemporaryPortalPassword } from "../../../utils/temporary-portal-password";
 
 const ROLE: UserRole = "VENUE_MANAGER";
 
@@ -371,26 +373,33 @@ export async function sendVenueAccountEmail(input: { venueId?: string; venueEmai
       ...(venueId ? { id: venueId } : {}),
       ...(venueEmail ? { email: venueEmail } : {}),
     },
-    select: { id: true, email: true, firstName: true, emailVerified: true, venueName: true },
+    select: { id: true, email: true, firstName: true, venueName: true },
   });
   if (!venue?.email) throw new Error("Venue manager not found");
 
-  let setPasswordUrl: string | undefined;
-  if (!venue.emailVerified) {
-    const resetToken = randomBytes(32).toString("hex");
-    const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await prisma.user.update({
-      where: { id: venue.id },
-      data: { resetToken, resetTokenExpiry },
-    });
-    const base = resolveFrontendBase().replace(/\/$/, "");
-    setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(venue.email)}`;
-  }
+  const plainTempPassword = generateTemporaryPortalPassword();
+  const hashedPassword = await bcrypt.hash(plainTempPassword, 12);
+  const resetToken = randomBytes(32).toString("hex");
+  const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: venue.id },
+    data: {
+      password: hashedPassword,
+      resetToken,
+      resetTokenExpiry,
+      loginAttempts: 0,
+    },
+  });
+
+  const base = resolveFrontendBase().replace(/\/$/, "");
+  const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(venue.email)}`;
 
   await sendUserAccountAccessEmail({
     toEmail: venue.email,
     firstName: venue.firstName || venue.venueName || "there",
     roleLabel: "Venue Manager",
-    setPasswordUrl,
+    temporaryPassword: plainTempPassword,
+    resetPasswordUrl,
   });
 }

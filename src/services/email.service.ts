@@ -501,9 +501,20 @@ export async function sendEventListingThankYouEmail(params: {
   toEmail: string;
   firstName: string;
   eventTitles: string[];
+  /** Prefer {@link resetPasswordUrl}. */
   setPasswordUrl?: string;
+  temporaryPassword?: string;
+  resetPasswordUrl?: string;
 }): Promise<void> {
-  const { toEmail, firstName, eventTitles, setPasswordUrl } = params;
+  const { toEmail, firstName, eventTitles, setPasswordUrl, temporaryPassword, resetPasswordUrl } = params;
+  const passwordSetupUrl = resetPasswordUrl ?? setPasswordUrl;
+  const safePw = temporaryPassword
+    ? String(temporaryPassword)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+    : "";
+
   const listHtml = eventTitles
     .map(
       (t) =>
@@ -531,14 +542,22 @@ export async function sendEventListingThankYouEmail(params: {
               Your event listing has been processed. Events:
             </p>
             <ul style="padding: 0; margin: 0 0 18px 0; list-style: none;">${listHtml}</ul>
-        ${
-          setPasswordUrl
-            ? `<p style="margin: 24px 0;">
-          <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Set password</a>
+            ${
+              temporaryPassword
+                ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: #334155; line-height: 1.6;">Sign in with this temporary password:</p>
+                  <div style="margin: 0 0 18px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 15px; letter-spacing: 0.03em; color: #0f172a;">${safePw}</div>
+                  <p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b; line-height: 1.6;">Change it after signing in or use the link below to set a new password.</p>`
+                : ""
+            }
+            ${
+              passwordSetupUrl
+                ? `<p style="margin: 24px 0;">
+          <a href="${escapeHtmlAttr(passwordSetupUrl)}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Reset password</a>
         </p>
-        <p style="font-size: 13px; color: #475569; line-height: 1.6;">Use this email <strong>${toEmail}</strong> to sign in after setting your password.</p>`
-            : ""
-        }
+        <p style="font-size: 13px; color: #475569; line-height: 1.6;">Use this email <strong>${toEmail}</strong> with the link above when prompted.</p>
+        <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${escapeHtmlText(passwordSetupUrl)}</p>`
+                : ""
+            }
             <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
           </div>
         </div>
@@ -547,13 +566,31 @@ export async function sendEventListingThankYouEmail(params: {
   });
 }
 
+function escapeHtmlAttr(url: string): string {
+  return url.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function escapeHtmlText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export async function sendUserAccountAccessEmail(params: {
   toEmail: string;
   firstName: string;
   roleLabel: "Organizer" | "Venue Manager";
+  /** Prefer {@link resetPasswordUrl}; kept for backward compatibility. */
   setPasswordUrl?: string;
+  temporaryPassword?: string;
+  resetPasswordUrl?: string;
 }): Promise<void> {
-  const { toEmail, firstName, roleLabel, setPasswordUrl } = params;
+  const { toEmail, firstName, roleLabel, setPasswordUrl, temporaryPassword, resetPasswordUrl } = params;
+  const passwordSetupUrl = resetPasswordUrl ?? setPasswordUrl;
+  const safePw = temporaryPassword
+    ? String(temporaryPassword)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+    : "";
 
   await dispatchMail({
     from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
@@ -572,14 +609,21 @@ export async function sendUserAccountAccessEmail(params: {
               Your <strong>${roleLabel}</strong> account is available with this email: <strong>${toEmail}</strong>.
             </p>
             ${
-              setPasswordUrl
+              temporaryPassword
+                ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: #334155; line-height: 1.6;">Sign in with this temporary password:</p>
+                  <div style="margin: 0 0 18px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 15px; letter-spacing: 0.03em; color: #0f172a;">${safePw}</div>
+                  <p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b; line-height: 1.6;">For security, change this password after signing in or use the reset link below to choose a new one.</p>`
+                : ""
+            }
+            ${
+              passwordSetupUrl
                 ? `<p style="margin: 20px 0;">
-                    <a href="${setPasswordUrl}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Verify Email & Set Password</a>
+                    <a href="${escapeHtmlAttr(passwordSetupUrl)}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Reset password</a>
                   </p>
                   <p style="font-size: 13px; color: #475569; line-height: 1.6;">
-                    Please verify your email and set a password to sign in.
+                    Use your email <strong>${toEmail}</strong> together with the link above if prompted.
                   </p>
-                  <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${setPasswordUrl}</p>`
+                  <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${escapeHtmlText(passwordSetupUrl)}</p>`
                 : `<p style="margin: 8px 0 0 0; color: #475569;">You can sign in directly using your existing password.</p>`
             }
             <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
