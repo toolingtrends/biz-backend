@@ -1,10 +1,8 @@
 import prisma from "../../../config/prisma";
 import { parseListQuery } from "../../../lib/admin-response";
 import type { UserRole } from "@prisma/client";
-import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { resolveFrontendBase, sendUserAccountAccessEmail } from "../../../services/email.service";
-import { generateTemporaryPortalPassword } from "../../../utils/temporary-portal-password";
 
 const ROLE: UserRole = "VENUE_MANAGER";
 
@@ -377,19 +375,12 @@ export async function sendVenueAccountEmail(input: { venueId?: string; venueEmai
   });
   if (!venue?.email) throw new Error("Venue manager not found");
 
-  const plainTempPassword = generateTemporaryPortalPassword();
-  const hashedPassword = await bcrypt.hash(plainTempPassword, 12);
   const resetToken = randomBytes(32).toString("hex");
-  const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.user.update({
     where: { id: venue.id },
-    data: {
-      password: hashedPassword,
-      resetToken,
-      resetTokenExpiry,
-      loginAttempts: 0,
-    },
+    data: { resetToken, resetTokenExpiry },
   });
 
   const base = resolveFrontendBase().replace(/\/$/, "");
@@ -399,7 +390,6 @@ export async function sendVenueAccountEmail(input: { venueId?: string; venueEmai
     toEmail: venue.email,
     firstName: venue.firstName || venue.venueName || "there",
     roleLabel: "Venue Manager",
-    temporaryPassword: plainTempPassword,
     resetPasswordUrl,
   });
 }

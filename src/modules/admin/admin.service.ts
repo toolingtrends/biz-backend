@@ -2,10 +2,8 @@ import prisma from "../../config/prisma";
 import { EventStatus } from "@prisma/client";
 import { normalizeYoutubeVideoUrlForStorage } from "../../utils/youtube-url";
 import { uploadImage } from "../../services/cloudinary.service";
-import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { resolveFrontendBase, sendEventListingThankYouEmail } from "../../services/email.service";
-import { generateTemporaryPortalPassword } from "../../utils/temporary-portal-password";
 
 function toStatusLabel(status: EventStatus | string): string {
   switch (String(status)) {
@@ -845,19 +843,12 @@ export async function adminSendEventListingEmail(params: { organizerEmail: strin
     throw new Error("Organizer not found");
   }
 
-  const plainTempPassword = generateTemporaryPortalPassword();
-  const hashedPassword = await bcrypt.hash(plainTempPassword, 12);
   const resetToken = randomBytes(32).toString("hex");
-  const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.user.update({
     where: { id: organizer.id },
-    data: {
-      password: hashedPassword,
-      resetToken,
-      resetTokenExpiry,
-      loginAttempts: 0,
-    },
+    data: { resetToken, resetTokenExpiry },
   });
 
   const base = resolveFrontendBase().replace(/\/$/, "");
@@ -867,7 +858,6 @@ export async function adminSendEventListingEmail(params: { organizerEmail: strin
     toEmail: organizerEmail,
     firstName: organizer.firstName || "there",
     eventTitles,
-    temporaryPassword: plainTempPassword,
     resetPasswordUrl,
   });
 }

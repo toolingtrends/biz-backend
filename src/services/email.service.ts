@@ -503,66 +503,23 @@ export async function sendEventListingThankYouEmail(params: {
   eventTitles: string[];
   /** Prefer {@link resetPasswordUrl}. */
   setPasswordUrl?: string;
-  temporaryPassword?: string;
   resetPasswordUrl?: string;
 }): Promise<void> {
-  const { toEmail, firstName, eventTitles, setPasswordUrl, temporaryPassword, resetPasswordUrl } = params;
-  const passwordSetupUrl = resetPasswordUrl ?? setPasswordUrl;
-  const safePw = temporaryPassword
-    ? String(temporaryPassword)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-    : "";
-
-  const listHtml = eventTitles
-    .map(
-      (t) =>
-        `<li style="margin: 8px 0; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">${String(
-          t
-        ).replace(/</g, "&lt;")}</li>`
-    )
-    .join("");
+  const passwordSetupUrl = params.resetPasswordUrl ?? params.setPasswordUrl;
+  if (!passwordSetupUrl) {
+    throw new Error("Event listing email requires resetPasswordUrl or setPasswordUrl");
+  }
 
   await dispatchMail({
     from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
-    to: toEmail,
-    subject: `Event listing update (${eventTitles.length})`,
-    html: `
-      <div style="font-family: Inter, Arial, sans-serif; background: #f1f5f9; padding: 24px;">
-        <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
-          <div style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%); color: #ffffff; padding: 22px 24px;">
-            <h2 style="margin: 0; font-size: 22px; line-height: 1.3;">Event Listing Update</h2>
-            <p style="margin: 8px 0 0 0; opacity: 0.92; font-size: 14px;">Your event details were processed successfully.</p>
-          </div>
-
-          <div style="padding: 22px 24px;">
-            <p style="margin: 0 0 12px 0; color: #0f172a;">Hello <strong>${firstName || "there"}</strong>,</p>
-            <p style="margin: 0 0 14px 0; color: #334155; line-height: 1.6;">
-              Your event listing has been processed. Events:
-            </p>
-            <ul style="padding: 0; margin: 0 0 18px 0; list-style: none;">${listHtml}</ul>
-            ${
-              temporaryPassword
-                ? `<p style="margin: 0 0 8px 0; font-size: 14px; color: #334155; line-height: 1.6;">Sign in with this temporary password:</p>
-                  <div style="margin: 0 0 18px 0; padding: 14px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 15px; letter-spacing: 0.03em; color: #0f172a;">${safePw}</div>
-                  <p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b; line-height: 1.6;">Change it after signing in or use the link below to set a new password.</p>`
-                : ""
-            }
-            ${
-              passwordSetupUrl
-                ? `<p style="margin: 24px 0;">
-          <a href="${escapeHtmlAttr(passwordSetupUrl)}" style="background: #2563eb; color: #fff; padding: 12px 22px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: 600;">Reset password</a>
-        </p>
-        <p style="font-size: 13px; color: #475569; line-height: 1.6;">Use this email <strong>${toEmail}</strong> with the link above when prompted.</p>
-        <p style="font-size: 12px; color: #94a3b8; word-break: break-all; margin-top: 10px;">${escapeHtmlText(passwordSetupUrl)}</p>`
-                : ""
-            }
-            <p style="margin: 22px 0 0 0; color: #334155;">Best regards,<br/><strong>The BizTradeFairs Team</strong></p>
-          </div>
-        </div>
-      </div>
-    `,
+    to: params.toEmail,
+    subject: `Event listing update (${params.eventTitles.length})`,
+    html: buildEventListingThankYouEmailHtml({
+      firstName: params.firstName || "there",
+      toEmail: params.toEmail,
+      eventTitles: params.eventTitles,
+      resetUrl: passwordSetupUrl,
+    }),
   });
 }
 
@@ -572,6 +529,501 @@ function escapeHtmlAttr(url: string): string {
 
 function escapeHtmlText(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Event listing processed — dark blue BIZZ header, event cards, reset-only CTA. */
+function buildEventListingThankYouEmailHtml(params: {
+  firstName: string;
+  toEmail: string;
+  eventTitles: string[];
+  resetUrl: string;
+}): string {
+  const { firstName, toEmail, eventTitles, resetUrl } = params;
+  const safeName = escapeHtmlText(firstName);
+  const safeEmail = escapeHtmlText(toEmail);
+  const safeHref = escapeHtmlAttr(resetUrl);
+
+  const social = [
+    { label: "Facebook", href: "https://www.facebook.com/biztradefair/", letter: "f" },
+    { label: "X", href: "https://x.com/biztradefair", letter: "𝕏" },
+    { label: "LinkedIn", href: "https://www.linkedin.com/company/biztradefairs/", letter: "in" },
+    { label: "Instagram", href: "https://www.instagram.com/biztradefairs/", letter: "IG" },
+  ] as const;
+
+  const socialRow = social
+    .map(
+      (s) =>
+        `<a href="${escapeHtmlAttr(s.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttr(
+          s.label
+        )}" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#4b5563;color:#ffffff;text-decoration:none;font-family:Inter,Arial,sans-serif;font-size:${s.letter === "in" || s.letter === "IG" ? "10px" : "14px"};font-weight:700;margin:0 6px;">${s.letter}</a>`
+    )
+    .join("");
+
+  const bizzHexLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="44" height="50" viewBox="0 0 44 50" aria-hidden="true">
+  <polygon points="22,4 40,14 40,34 22,44 4,34 4,14" fill="none" stroke="#ffffff" stroke-width="2.2"/>
+  <text x="22" y="31" text-anchor="middle" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700">B</text>
+</svg>`;
+
+  const headerGraphic = `
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="92" viewBox="0 0 108 92" aria-hidden="true">
+  <polygon points="94,6 99,16 108,12 103,22 108,32 99,28 94,38 91,27 82,30 88,22 82,14 91,17" fill="#fbbf24" opacity="0.95"/>
+  <polygon points="8,72 14,78 22,74 18,82 24,88 15,86 10,92 10,83 2,80 10,77" fill="#60a5fa"/>
+  <polygon points="52,4 58,14 68,10 62,20 70,26 60,26 56,36 52,26 42,28 48,20 42,12" fill="#a78bfa" opacity="0.9"/>
+  <rect x="12" y="18" width="72" height="62" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="12" y="18" width="72" height="14" rx="4" fill="#2563eb"/>
+  <rect x="22" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <rect x="42" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <rect x="62" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <circle cx="82" cy="34" r="17" fill="#22c55e"/>
+  <path d="M75 34 L79 40 L91 26" stroke="#ffffff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+  const eventCardsHtml = eventTitles
+    .map((raw) => {
+      const safeTitle = escapeHtmlText(String(raw));
+      return `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;margin-bottom:12px;">
+              <tr>
+                <td style="padding:16px 14px;width:52px;" valign="middle">
+                  <div style="width:44px;height:44px;border-radius:999px;background:#dbeafe;text-align:center;line-height:44px;font-size:20px;">📅</div>
+                </td>
+                <td valign="middle" style="padding:14px 10px 14px 0;">
+                  <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.07em;font-weight:600;">Event name</div>
+                  <div style="font-size:17px;font-weight:700;color:#0f172a;line-height:1.35;">${safeTitle}</div>
+                </td>
+                <td valign="middle" align="right" style="padding:14px 16px 14px 0;">
+                  <div style="width:40px;height:40px;border-radius:999px;background:#dbeafe;text-align:center;line-height:40px;font-size:17px;">🎟</div>
+                </td>
+              </tr>
+            </table>`;
+    })
+    .join("");
+
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0;padding:0;background:#f1f5f9;">
+  <tr>
+    <td align="center" style="padding:24px 12px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;">
+        <tr>
+          <td style="background:#172554;padding:28px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+              <td valign="top" style="width:62%;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td valign="middle" style="padding-right:10px;">${bizzHexLogo}</td>
+                  <td valign="middle" style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.08em;">BIZZ</td>
+                </tr></table>
+                <h1 style="margin:20px 0 8px 0;font-size:24px;line-height:1.25;color:#ffffff;font-weight:800;">Event Listing Update</h1>
+                <p style="margin:0;font-size:15px;line-height:1.5;color:rgba(255,255,255,0.9);">Your event details were processed successfully.</p>
+              </td>
+              <td valign="middle" align="right" style="width:38%;">${headerGraphic}</td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 24px 8px 24px;background:#ffffff;">
+            <p style="margin:0 0 10px 0;font-size:17px;line-height:1.5;color:#1e40af;"><strong>Hello ${safeName},</strong></p>
+            <p style="margin:0;font-size:15px;line-height:1.65;color:#475569;">
+              Great news! Your event listing has been processed successfully. Here are your event details:
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 24px 8px 24px;background:#ffffff;">${eventCardsHtml}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 24px 20px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:12px;">
+              <tr>
+                <td style="padding:24px 22px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="52">
+                      <div style="width:46px;height:46px;border-radius:999px;background:#dcfce7;text-align:center;line-height:46px;font-size:22px;">🛡️</div>
+                    </td>
+                    <td valign="top" style="padding-left:4px;">
+                      <div style="font-size:17px;font-weight:800;color:#0f172a;line-height:1.35;margin-bottom:8px;">Your account is ready!</div>
+                      <p style="margin:0 0 22px 0;font-size:15px;line-height:1.6;color:#475569;">
+                        Click the button below to set your password and access your account securely.
+                      </p>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                        <td align="center">
+                          <a href="${safeHref}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:10px;">
+                            Set Your Password&nbsp;&nbsp;&rarr;
+                          </a>
+                        </td>
+                      </tr></table>
+                      <div style="height:1px;background:#bae6fd;margin:22px 0 14px 0;"></div>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                        <td valign="top" style="padding-right:8px;font-size:16px;line-height:1;">✅</td>
+                        <td valign="top" style="font-size:13px;line-height:1.55;color:#475569;">
+                          This secure link will expire in <strong style="color:#2563eb;">15 minutes</strong>.
+                        </td>
+                      </tr></table>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 18px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;">
+              <tr>
+                <td style="padding:18px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="44">
+                      <div style="width:38px;height:38px;border-radius:999px;background:#ffedd5;text-align:center;line-height:38px;font-size:18px;">✉️</div>
+                    </td>
+                    <td valign="top" style="padding-left:6px;font-size:14px;line-height:1.55;color:#78350f;">
+                      Use this email (<strong style="color:#2563eb;">${safeEmail}</strong>) to set your password when prompted.
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 24px 24px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;">
+              <tr>
+                <td style="padding:18px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="42">
+                      <div style="width:36px;height:36px;border-radius:999px;background:#ede9fe;text-align:center;line-height:36px;color:#6d28d9;font-weight:800;font-size:15px;">?</div>
+                    </td>
+                    <td valign="top" style="padding-left:6px;">
+                      <div style="font-size:15px;font-weight:800;color:#6d28d9;line-height:1.35;">Didn't request this?</div>
+                      <div style="font-size:14px;color:#5b21b6;line-height:1.55;margin-top:6px;opacity:0.92;">
+                        If you didn't request access to this account, you can safely ignore this email.
+                      </div>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:12px 24px 32px 24px;background:#ffffff;border-top:1px solid #f1f5f9;">
+            <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
+              💙 Best regards,<br/>
+              <strong style="color:#2563eb;font-size:16px;">The BizTradeFairs Team</strong>
+            </p>
+            <div style="font-size:0;line-height:0;">${socialRow}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
+}
+
+/** Venue Manager invitation — purple welcome layout (reset link only; matches marketing welcome emails). */
+function buildVenueManagerWelcomeEmailHtml(params: {
+  firstName: string;
+  toEmail: string;
+  resetUrl: string;
+}): string {
+  const { firstName, toEmail, resetUrl } = params;
+  const safeName = escapeHtmlText(firstName);
+  const safeEmail = escapeHtmlText(toEmail);
+  const safeHref = escapeHtmlAttr(resetUrl);
+
+  const social = [
+    { label: "Facebook", href: "https://www.facebook.com/biztradefair/", letter: "f" },
+    { label: "X", href: "https://x.com/biztradefair", letter: "𝕏" },
+    { label: "LinkedIn", href: "https://www.linkedin.com/company/biztradefairs/", letter: "in" },
+    { label: "Instagram", href: "https://www.instagram.com/biztradefairs/", letter: "IG" },
+  ] as const;
+
+  const socialRow = social
+    .map(
+      (s) =>
+        `<a href="${escapeHtmlAttr(s.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttr(
+          s.label
+        )}" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#374151;color:#ffffff;text-decoration:none;font-family:Inter,Arial,sans-serif;font-size:${s.letter === "in" || s.letter === "IG" ? "10px" : "14px"};font-weight:700;margin:0 6px;">${s.letter}</a>`
+    )
+    .join("");
+
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0;padding:0;background:#f9f9ff;">
+  <tr>
+    <td align="center" style="padding:40px 16px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;">
+        <!-- Logo -->
+        <tr>
+          <td align="center" style="padding:0 0 28px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td valign="middle" style="width:48px;height:48px;background:#7c3aed;border-radius:12px;text-align:center;line-height:48px;color:#ffffff;font-size:22px;font-weight:800;">B</td>
+              <td valign="middle" style="padding-left:14px;">
+                <div style="font-size:22px;font-weight:800;color:#1e1b4b;letter-spacing:0.12em;line-height:1.2;">BIZZ</div>
+                <div style="font-size:13px;color:#64748b;margin-top:4px;">Connect. Explore. Grow.</div>
+              </td>
+            </tr></table>
+          </td>
+        </tr>
+        <!-- Hero -->
+        <tr>
+          <td align="center" style="padding:0 24px 32px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td align="center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="132" height="108" viewBox="0 0 132 108" aria-hidden="true">
+                  <circle cx="118" cy="22" r="8" fill="#ddd6fe"/>
+                  <circle cx="14" cy="78" r="6" fill="#e9d5ff"/>
+                  <rect x="16" y="28" width="100" height="64" rx="10" fill="#ffffff" stroke="#c4b5fd" stroke-width="2"/>
+                  <path d="M16 36 L66 68 L116 36" fill="none" stroke="#c4b5fd" stroke-width="2"/>
+                  <circle cx="66" cy="58" r="20" fill="#7c3aed"/>
+                  <path d="M56 58 L63 65 L78 48" stroke="#ffffff" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </td>
+            </tr></table>
+            <h1 style="margin:20px 0 10px 0;font-size:28px;line-height:1.25;color:#1e1b4b;font-weight:800;">Welcome to Bizz! 🎉</h1>
+            <p style="margin:0;font-size:17px;line-height:1.55;color:#64748b;">Your account has been created successfully.</p>
+            <p style="margin:14px 0 0 0;font-size:15px;line-height:1.55;color:#64748b;">Hello ${safeName}, your venue login email is <strong style="color:#1e1b4b;">${safeEmail}</strong>.</p>
+          </td>
+        </tr>
+        <!-- CTA card -->
+        <tr>
+          <td style="padding:0 8px 24px 8px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(124,58,237,0.08);">
+              <tr>
+                <td align="center" style="padding:36px 28px 28px 28px;">
+                  <div style="width:56px;height:56px;margin:0 auto 18px auto;border-radius:999px;border:2px solid #7c3aed;background:#faf5ff;line-height:52px;text-align:center;font-size:22px;color:#7c3aed;">👤</div>
+                  <h2 style="margin:0 0 12px 0;font-size:22px;color:#1e1b4b;font-weight:800;">Complete Your Account Setup</h2>
+                  <p style="margin:0 0 28px 0;font-size:15px;line-height:1.6;color:#64748b;max-width:440px;">
+                    To get started, please set a secure password for your account by clicking the button below.
+                  </p>
+                  <a href="${safeHref}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 36px;border-radius:10px;">
+                    Set Your Password
+                  </a>
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px auto 0 auto;"><tr>
+                    <td valign="top" style="padding-right:10px;font-size:18px;line-height:1;">🛡️</td>
+                    <td valign="top" style="text-align:left;">
+                      <div style="font-size:14px;font-weight:700;color:#1e1b4b;line-height:1.4;">Your security matters</div>
+                      <div style="font-size:13px;color:#64748b;line-height:1.5;margin-top:4px;">This link will expire in 15 minutes for security reasons.</div>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Didn't request -->
+        <tr>
+          <td style="padding:0 12px 28px 12px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ede9fe;border-radius:14px;">
+              <tr>
+                <td style="padding:22px 24px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="44">
+                      <div style="width:36px;height:36px;border-radius:999px;background:#7c3aed;color:#ffffff;text-align:center;line-height:36px;font-weight:700;font-size:16px;">?</div>
+                    </td>
+                    <td valign="top" style="padding-left:8px;">
+                      <div style="font-size:15px;font-weight:700;color:#1e1b4b;line-height:1.35;">Didn't request this?</div>
+                      <div style="font-size:14px;color:#64748b;line-height:1.55;margin-top:6px;">
+                        If you didn't sign up for a Bizz account, you can safely ignore this email.
+                      </div>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="padding:8px 16px 32px 16px;">
+            <p style="margin:0 0 20px 0;font-size:15px;line-height:1.6;color:#1e1b4b;">
+              💜 <strong>Thanks,</strong> <span style="color:#7c3aed;font-weight:600;">The Bizz Team</span>
+            </p>
+            <p style="margin:0 0 12px 0;font-size:12px;color:#94a3b8;">BizTradeFairs</p>
+            <div style="font-size:0;line-height:0;">${socialRow}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
+}
+
+/** Organizer admin invitation — dark blue header + cards (reset link only). */
+function buildOrganizerAccountWelcomeEmailHtml(params: {
+  firstName: string;
+  toEmail: string;
+  resetUrl: string;
+}): string {
+  const { firstName, toEmail, resetUrl } = params;
+  const safeName = escapeHtmlText(firstName);
+  const safeEmail = escapeHtmlText(toEmail);
+  const safeHref = escapeHtmlAttr(resetUrl);
+
+  const social = [
+    { label: "Facebook", href: "https://www.facebook.com/biztradefair/", letter: "f" },
+    { label: "X", href: "https://x.com/biztradefair", letter: "𝕏" },
+    { label: "LinkedIn", href: "https://www.linkedin.com/company/biztradefairs/", letter: "in" },
+    { label: "Instagram", href: "https://www.instagram.com/biztradefairs/", letter: "IG" },
+  ] as const;
+
+  const socialRow = social
+    .map(
+      (s) =>
+        `<a href="${escapeHtmlAttr(s.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHtmlAttr(
+          s.label
+        )}" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;border-radius:999px;background:#4b5563;color:#ffffff;text-decoration:none;font-family:Inter,Arial,sans-serif;font-size:${s.letter === "in" || s.letter === "IG" ? "10px" : "14px"};font-weight:700;margin:0 6px;">${s.letter}</a>`
+    )
+    .join("");
+
+  const headerGraphic = `
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="92" viewBox="0 0 108 92" aria-hidden="true">
+  <polygon points="94,6 99,16 108,12 103,22 108,32 99,28 94,38 91,27 82,30 88,22 82,14 91,17" fill="#fbbf24" opacity="0.95"/>
+  <polygon points="8,72 14,78 22,74 18,82 24,88 15,86 10,92 10,83 2,80 10,77" fill="#60a5fa"/>
+  <rect x="12" y="18" width="72" height="62" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="12" y="18" width="72" height="14" rx="4" fill="#2563eb"/>
+  <rect x="22" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <rect x="42" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <rect x="62" y="38" width="14" height="10" rx="2" fill="#dbeafe"/>
+  <circle cx="82" cy="34" r="17" fill="#22c55e"/>
+  <path d="M75 34 L79 40 L91 26" stroke="#ffffff" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+  return `
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0;padding:0;background:#f1f5f9;">
+  <tr>
+    <td align="center" style="padding:24px 12px;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;">
+        <!-- Header -->
+        <tr>
+          <td style="background:#172554;padding:28px 24px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+              <td valign="top" style="width:62%;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td valign="middle" style="width:40px;height:40px;background:#ffffff;border-radius:8px;text-align:center;line-height:40px;color:#172554;font-size:18px;font-weight:800;">B</td>
+                  <td valign="middle" style="padding-left:12px;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.08em;">BIZZ</td>
+                </tr></table>
+                <h1 style="margin:20px 0 8px 0;font-size:24px;line-height:1.25;color:#ffffff;font-weight:800;">Organizer Account Update</h1>
+                <p style="margin:0;font-size:15px;line-height:1.5;color:rgba(255,255,255,0.9);">Your account details were processed successfully.</p>
+              </td>
+              <td valign="middle" align="right" style="width:38%;">${headerGraphic}</td>
+            </tr></table>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px 24px 12px 24px;background:#ffffff;">
+            <p style="margin:0 0 10px 0;font-size:17px;line-height:1.5;color:#1e40af;"><strong>Hello ${safeName},</strong></p>
+            <p style="margin:0;font-size:15px;line-height:1.65;color:#475569;">
+              Great news! Your organizer account is ready on BizTradeFairs. Use the secure link below to set your password and access your dashboard.
+            </p>
+          </td>
+        </tr>
+        <!-- Login email card -->
+        <tr>
+          <td style="padding:8px 24px 20px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #e2e8f0;border-radius:12px;background:#fafafa;">
+              <tr>
+                <td style="padding:18px 16px;width:52px;" valign="middle">
+                  <div style="width:44px;height:44px;border-radius:999px;background:#dbeafe;text-align:center;line-height:44px;font-size:20px;">📅</div>
+                </td>
+                <td valign="middle" style="padding:14px 8px 14px 0;">
+                  <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.07em;font-weight:600;">Login email</div>
+                  <div style="font-size:17px;font-weight:700;color:#0f172a;line-height:1.35;">${safeEmail}</div>
+                </td>
+                <td valign="middle" align="right" style="padding:14px 16px 14px 0;font-size:22px;opacity:0.35;line-height:1;">🎟</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- CTA card -->
+        <tr>
+          <td style="padding:8px 24px 20px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:12px;">
+              <tr>
+                <td style="padding:24px 22px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="52">
+                      <div style="width:46px;height:46px;border-radius:999px;background:#dcfce7;text-align:center;line-height:46px;font-size:22px;">🛡️</div>
+                    </td>
+                    <td valign="top" style="padding-left:4px;">
+                      <div style="font-size:17px;font-weight:800;color:#0f172a;line-height:1.35;margin-bottom:8px;">Your account is ready!</div>
+                      <p style="margin:0 0 22px 0;font-size:15px;line-height:1.6;color:#475569;">
+                        Click the button below to set your password and access your account securely.
+                      </p>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                        <td align="center">
+                          <a href="${safeHref}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:10px;">
+                            Set Your Password&nbsp;&nbsp;&rarr;
+                          </a>
+                        </td>
+                      </tr></table>
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:20px;"><tr>
+                        <td valign="top" style="padding-right:8px;font-size:16px;">🛡️</td>
+                        <td valign="top" style="font-size:13px;line-height:1.5;color:#15803d;">
+                          This secure link will expire in <strong>15 minutes</strong>.
+                        </td>
+                      </tr></table>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Email reminder banner -->
+        <tr>
+          <td style="padding:0 24px 18px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;">
+              <tr>
+                <td style="padding:18px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="44">
+                      <div style="width:38px;height:38px;border-radius:999px;background:#ffedd5;text-align:center;line-height:38px;font-size:18px;">✉️</div>
+                    </td>
+                    <td valign="top" style="padding-left:6px;font-size:14px;line-height:1.55;color:#78350f;">
+                      Use this email (<strong style="color:#2563eb;">${safeEmail}</strong>) to set your password when prompted.
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Didn't request -->
+        <tr>
+          <td style="padding:0 24px 24px 24px;background:#ffffff;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;">
+              <tr>
+                <td style="padding:18px 18px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+                    <td valign="top" width="42">
+                      <div style="width:36px;height:36px;border-radius:999px;background:#ede9fe;text-align:center;line-height:36px;color:#6d28d9;font-weight:800;font-size:15px;">?</div>
+                    </td>
+                    <td valign="top" style="padding-left:6px;">
+                      <div style="font-size:15px;font-weight:800;color:#6d28d9;line-height:1.35;">Didn't request this?</div>
+                      <div style="font-size:14px;color:#5b21b6;line-height:1.55;margin-top:6px;opacity:0.92;">
+                        If you didn't request access to this account, you can safely ignore this email.
+                      </div>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td align="center" style="padding:12px 24px 32px 24px;background:#ffffff;border-top:1px solid #f1f5f9;">
+            <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#334155;">
+              💙 Best regards,<br/>
+              <strong style="color:#2563eb;font-size:16px;">The BizTradeFairs Team</strong>
+            </p>
+            <div style="font-size:0;line-height:0;">${socialRow}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>`;
 }
 
 export async function sendUserAccountAccessEmail(params: {
@@ -592,11 +1044,38 @@ export async function sendUserAccountAccessEmail(params: {
         .replace(/>/g, "&gt;")
     : "";
 
+  const venueWelcome =
+    roleLabel === "Venue Manager" && passwordSetupUrl
+      ? {
+          subject: "Welcome to Bizz — complete your account setup",
+          html: buildVenueManagerWelcomeEmailHtml({
+            firstName: firstName || "there",
+            toEmail,
+            resetUrl: passwordSetupUrl,
+          }),
+        }
+      : null;
+
+  const organizerWelcome =
+    roleLabel === "Organizer" && passwordSetupUrl
+      ? {
+          subject: "Organizer Account Update",
+          html: buildOrganizerAccountWelcomeEmailHtml({
+            firstName: firstName || "there",
+            toEmail,
+            resetUrl: passwordSetupUrl,
+          }),
+        }
+      : null;
+
   await dispatchMail({
     from: `"BizTradeFairs" <${getEffectiveFromEmail()}>`,
     to: toEmail,
-    subject: `${roleLabel} account access details`,
-    html: `
+    subject: venueWelcome?.subject ?? organizerWelcome?.subject ?? `${roleLabel} account access details`,
+    html:
+      venueWelcome?.html ??
+      organizerWelcome?.html ??
+      `
       <div style="font-family: Inter, Arial, sans-serif; background: #f1f5f9; padding: 24px;">
         <div style="max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
           <div style="background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 55%, #0ea5e9 100%); color: #ffffff; padding: 22px 24px;">
