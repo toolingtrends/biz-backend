@@ -222,26 +222,23 @@ async function sendOrganizerAccountEmail(input) {
             ...(organizerId ? { id: organizerId } : {}),
             ...(organizerEmail ? { email: organizerEmail } : {}),
         },
-        select: { id: true, email: true, firstName: true, emailVerified: true },
+        select: { id: true, email: true, firstName: true },
     });
     if (!organizer?.email)
         throw new Error("Organizer not found");
-    let setPasswordUrl;
-    if (!organizer.emailVerified) {
-        const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
-        const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await prisma_1.default.user.update({
-            where: { id: organizer.id },
-            data: { resetToken, resetTokenExpiry },
-        });
-        const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
-        setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizer.email)}`;
-    }
+    const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    await prisma_1.default.user.update({
+        where: { id: organizer.id },
+        data: { resetToken, resetTokenExpiry },
+    });
+    const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
+    const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizer.email)}`;
     await (0, email_service_1.sendUserAccountAccessEmail)({
         toEmail: organizer.email,
         firstName: organizer.firstName || "there",
         roleLabel: "Organizer",
-        setPasswordUrl,
+        resetPasswordUrl,
     });
 }
 async function listOrganizerConnectionsForAdmin() {

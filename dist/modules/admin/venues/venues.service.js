@@ -348,25 +348,22 @@ async function sendVenueAccountEmail(input) {
             ...(venueId ? { id: venueId } : {}),
             ...(venueEmail ? { email: venueEmail } : {}),
         },
-        select: { id: true, email: true, firstName: true, emailVerified: true, venueName: true },
+        select: { id: true, email: true, firstName: true, venueName: true },
     });
     if (!venue?.email)
         throw new Error("Venue manager not found");
-    let setPasswordUrl;
-    if (!venue.emailVerified) {
-        const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
-        const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await prisma_1.default.user.update({
-            where: { id: venue.id },
-            data: { resetToken, resetTokenExpiry },
-        });
-        const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
-        setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(venue.email)}`;
-    }
+    const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    await prisma_1.default.user.update({
+        where: { id: venue.id },
+        data: { resetToken, resetTokenExpiry },
+    });
+    const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
+    const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(venue.email)}`;
     await (0, email_service_1.sendUserAccountAccessEmail)({
         toEmail: venue.email,
         firstName: venue.firstName || venue.venueName || "there",
         roleLabel: "Venue Manager",
-        setPasswordUrl,
+        resetPasswordUrl,
     });
 }

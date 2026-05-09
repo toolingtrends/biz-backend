@@ -761,27 +761,23 @@ async function adminSendEventListingEmail(params) {
     }
     const organizer = await prisma_1.default.user.findFirst({
         where: { email: organizerEmail, role: "ORGANIZER" },
-        select: { id: true, firstName: true, emailVerified: true },
+        select: { id: true, firstName: true },
     });
     if (!organizer) {
         throw new Error("Organizer not found");
     }
-    let setPasswordUrl;
-    // Requirement: show "Set Password" only when email is not verified.
-    if (!organizer.emailVerified) {
-        const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
-        const resetTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        await prisma_1.default.user.update({
-            where: { id: organizer.id },
-            data: { resetToken, resetTokenExpiry },
-        });
-        const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
-        setPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
-    }
+    const resetToken = (0, crypto_1.randomBytes)(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+    await prisma_1.default.user.update({
+        where: { id: organizer.id },
+        data: { resetToken, resetTokenExpiry },
+    });
+    const base = (0, email_service_1.resolveFrontendBase)().replace(/\/$/, "");
+    const resetPasswordUrl = `${base}/reset-password?token=${resetToken}&email=${encodeURIComponent(organizerEmail)}`;
     await (0, email_service_1.sendEventListingThankYouEmail)({
         toEmail: organizerEmail,
         firstName: organizer.firstName || "there",
         eventTitles,
-        setPasswordUrl,
+        resetPasswordUrl,
     });
 }

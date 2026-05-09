@@ -75,6 +75,46 @@ router.post("/refresh", async (req, res) => {
         return res.status(401).json({ message: "Invalid or expired refresh token" });
     }
 });
+// POST /api/auth/oauth-sync — server-to-server from Next.js NextAuth (header secret).
+// Persists Google/LinkedIn users to PostgreSQL and returns the same JWT shape as /login.
+router.post("/oauth-sync", async (req, res) => {
+    try {
+        const expected = process.env.OAUTH_SYNC_SECRET;
+        if (!expected) {
+            return res.status(503).json({
+                message: "OAuth sync is not configured (OAUTH_SYNC_SECRET)",
+            });
+        }
+        const headerSecret = req.headers["x-oauth-sync-secret"];
+        if (headerSecret !== expected) {
+            return res.status(401).json({ message: "Unauthorized" });
+        }
+        const body = req.body;
+        const email = body.email?.trim();
+        if (!email) {
+            return res.status(400).json({ message: "email is required" });
+        }
+        const result = await auth_service_1.AuthService.syncOAuthPortalUser({
+            email,
+            name: body.name,
+            image: body.image,
+        });
+        return res.json({
+            user: result.user,
+            accessToken: result.tokens.accessToken,
+            refreshToken: result.tokens.refreshToken,
+        });
+    }
+    catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("OAuth sync error (backend):", err);
+        const msg = err instanceof Error ? err.message : "OAuth sync failed";
+        if (msg === "Account is deactivated") {
+            return res.status(403).json({ message: msg });
+        }
+        return res.status(500).json({ message: msg });
+    }
+});
 // POST /api/auth/send-otp
 router.post("/send-otp", async (req, res) => {
     try {

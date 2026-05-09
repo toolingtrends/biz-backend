@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import prisma from "../config/prisma";
 import { AuthTokenPayload, AuthRole, AuthDomain } from "../modules/auth.types";
 import { getDisplayName } from "../utils/display-name";
@@ -119,6 +120,86 @@ export class AuthService {
 
     if (!user.isActive) {
       return null;
+    }
+
+    const role = mapUserRoleToAuthRole(user.role);
+    const payload: AuthTokenPayload = {
+      sub: user.id,
+      email: user.email ?? normalizedEmail,
+      role,
+      domain: "USER",
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatar: user.avatar ?? undefined,
+      displayName: getDisplayName(user),
+    };
+
+    const tokens = AuthService.issueTokens(payload);
+    return { user: payload, tokens };
+  }
+
+  /**
+   * Create or update a portal user from Google/LinkedIn OAuth and issue JWTs.
+   * Used by Next.js NextAuth via internal POST /api/auth/oauth-sync.
+   */
+  static async syncOAuthPortalUser(input: {
+    email: string;
+    name?: string | null;
+    image?: string | null;
+  }): Promise<AuthResult> {
+    const normalizedEmail = input.email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      throw new Error("Email is required");
+    }
+
+    const rawName = (input.name || "").trim();
+    const nameParts = rawName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || "User";
+    const lastName =
+      nameParts.length > 1 ? nameParts.slice(1).join(" ") : "User";
+
+    let user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      const hashedPassword = await bcrypt.hash(
+        crypto.randomBytes(32).toString("hex"),
+        10
+      );
+      user = await prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          firstName,
+          lastName,
+          password: hashedPassword,
+          avatar: input.image || undefined,
+          role: "ATTENDEE",
+          isVerified: true,
+          isActive: true,
+          emailVerified: true,
+          lastLogin: new Date(),
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(input.image ? { avatar: input.image } : {}),
+          lastLogin: new Date(),
+        },
+      });
+      const refreshed = await prisma.user.findUnique({
+        where: { id: user.id },
+      });
+      if (!refreshed) {
+        throw new Error("User not found after OAuth sync");
+      }
+      user = refreshed;
+    }
+
+    if (!user.isActive) {
+      throw new Error("Account is deactivated");
     }
 
     const role = mapUserRoleToAuthRole(user.role);
