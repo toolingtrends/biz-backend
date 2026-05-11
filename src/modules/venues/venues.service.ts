@@ -19,7 +19,12 @@ export async function listVenues(params: ListVenuesParams) {
   const skip = (page - 1) * limit;
   const requireVenueImage = params.requireVenueImage === true;
 
-  const where: any = { role: "VENUE_MANAGER", ...activePublicProfileUserWhere() };
+  const where: any = {
+    role: "VENUE_MANAGER",
+    ...activePublicProfileUserWhere(),
+    /** Only admin-approved venues appear on the public /venues directory. */
+    isVerified: true,
+  };
   if (requireVenueImage) {
     where.venueImages = { isEmpty: false };
   }
@@ -117,7 +122,12 @@ export async function getVenueEvents(id: string, viewerUserId?: string | null) {
   const isSelf = canUserViewOwnPrivateProfile(viewerUserId ?? undefined, id);
   if (!isSelf) {
     const visible = await prisma.user.findFirst({
-      where: { id, role: "VENUE_MANAGER", ...activePublicProfileUserWhere() },
+      where: {
+        id,
+        role: "VENUE_MANAGER",
+        ...activePublicProfileUserWhere(),
+        isVerified: true,
+      },
       select: { id: true },
     });
     if (!visible) {
@@ -184,9 +194,25 @@ export async function getVenueEvents(id: string, viewerUserId?: string | null) {
   };
 }
 
-export async function listVenueReviews(venueId: string, options?: { includeReplies?: boolean }) {
+export async function listVenueReviews(
+  venueId: string,
+  options?: { includeReplies?: boolean; viewerUserId?: string | null }
+) {
   if (!venueId) {
     throw new Error("Invalid venue ID");
+  }
+
+  const venue = await prisma.user.findFirst({
+    where: { id: venueId, role: "VENUE_MANAGER" },
+    select: { id: true, isVerified: true, isActive: true },
+  });
+  if (!venue) {
+    return [];
+  }
+  const isSelf = canUserViewOwnPrivateProfile(options?.viewerUserId ?? undefined, venueId);
+  const publicListing = venue.isVerified && venue.isActive;
+  if (!publicListing && !isSelf) {
+    return [];
   }
 
   let reviews: any[] = [];
@@ -273,6 +299,17 @@ export async function createVenueReview(params: {
   }
   if (!rating || rating < 1 || rating > 5) {
     throw new Error("Rating must be between 1 and 5");
+  }
+
+  const venueRow = await prisma.user.findFirst({
+    where: { id: venueId, role: "VENUE_MANAGER" },
+    select: { id: true, isVerified: true, isActive: true },
+  });
+  if (!venueRow) {
+    throw new Error("Venue not found");
+  }
+  if (!venueRow.isVerified || !venueRow.isActive) {
+    throw new Error("This venue is not yet approved for public reviews");
   }
 
   const review = await prisma.review.create({

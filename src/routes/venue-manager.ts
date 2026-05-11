@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../config/prisma";
 import { normalizeVenueTimezoneInput } from "../utils/iana-timezones";
+import { optionalUser } from "../middleware/auth.middleware";
 
 const router = Router();
 
@@ -59,7 +60,7 @@ async function syncLocationMasterFromVenue(input: { country?: string; state?: st
 }
 
 // GET /api/venue-manager/:id – venue manager profile + basic stats
-router.get("/venue-manager/:id", async (req, res) => {
+router.get("/venue-manager/:id", optionalUser, async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) {
@@ -77,6 +78,20 @@ router.get("/venue-manager/:id", async (req, res) => {
         success: false,
         error: "Venue manager not found",
       });
+    }
+
+    if (venueManager.role === "VENUE_MANAGER") {
+      const isOwner =
+        req.auth?.domain === "USER" && req.auth.sub === venueManager.id;
+      const isAdmin = req.auth?.domain === "ADMIN";
+      const visibleToPublic =
+        venueManager.isVerified && venueManager.isActive;
+      if (!visibleToPublic && !isOwner && !isAdmin) {
+        return res.status(404).json({
+          success: false,
+          error: "Venue not found",
+        });
+      }
     }
 
     const now = new Date();
@@ -271,6 +286,8 @@ router.post("/venue-manager/:organizerId", async (req, res) => {
         firstName: managerFirst || venueName || "Venue",
         lastName: managerLast || "Manager",
         password: passwordToUse,
+        isVerified: false,
+        isActive: false,
         venueName,
         company: venueName || null,
         avatar: logo || null,

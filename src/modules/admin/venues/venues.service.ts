@@ -339,7 +339,9 @@ export async function createVenue(body: Record<string, unknown>) {
       venueCountry: body.venueCountry != null ? String(body.venueCountry) : null,
       venueAddress: body.venueAddress != null ? String(body.venueAddress) : null,
       maxCapacity: body.maxCapacity != null ? Number(body.maxCapacity) : null,
-      isActive: body.isActive !== false,
+      /** New venues stay off /venues until admin sets both active + verified. */
+      isActive: body.isActive === true,
+      isVerified: body.isVerified === true,
       avatar: logo || null,
       venueImages,
     },
@@ -357,7 +359,7 @@ export async function updateVenue(id: string, body: Record<string, unknown>) {
   if (!existing) return null;
   const allowed = [
     "firstName", "lastName", "phone", "venueName", "venueCity", "venueState",
-    "venueCountry", "venueAddress", "maxCapacity", "isActive",
+    "venueCountry", "venueAddress", "maxCapacity", "isActive", "isVerified",
   ];
   const data: Record<string, unknown> = {};
   for (const k of allowed) {

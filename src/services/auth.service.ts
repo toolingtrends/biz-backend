@@ -119,8 +119,13 @@ export class AuthService {
       return null;
     }
 
+    // Venue managers start isActive=false until admin activates; they may still sign in to finish setup.
     if (!user.isActive) {
-      return null;
+      const venueAwaitingAdmin =
+        user.role === "VENUE_MANAGER" && !user.isVerified;
+      if (!venueAwaitingAdmin) {
+        return null;
+      }
     }
 
     const role = mapUserRoleToAuthRole(user.role);
@@ -181,6 +186,7 @@ export class AuthService {
         crypto.randomBytes(32).toString("hex"),
         10
       );
+      const isNewVenueManager = roleForCreate === "VENUE_MANAGER";
       user = await prisma.user.create({
         data: {
           email: normalizedEmail,
@@ -189,8 +195,9 @@ export class AuthService {
           password: hashedPassword,
           avatar: input.image || undefined,
           role: roleForCreate,
-          isVerified: true,
-          isActive: true,
+          ...(isNewVenueManager
+            ? { isVerified: false, isActive: false }
+            : { isVerified: true, isActive: true }),
           emailVerified: true,
           lastLogin: new Date(),
         },
@@ -213,7 +220,11 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw new Error("Account is deactivated");
+      const venueAwaitingAdmin =
+        user.role === "VENUE_MANAGER" && !user.isVerified;
+      if (!venueAwaitingAdmin) {
+        throw new Error("Account is deactivated");
+      }
     }
 
     const role = mapUserRoleToAuthRole(user.role);
@@ -296,7 +307,11 @@ export class AuthService {
       throw new Error("User not found");
     }
     if (!user.isActive) {
-      throw new Error("Account is deactivated");
+      const venueAwaitingAdmin =
+        user.role === "VENUE_MANAGER" && !user.isVerified;
+      if (!venueAwaitingAdmin) {
+        throw new Error("Account is deactivated");
+      }
     }
 
     const role = mapUserRoleToAuthRole(user.role);

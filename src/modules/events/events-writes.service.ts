@@ -288,8 +288,9 @@ export async function findOrCreateUser(userData: {
       bio: data.bio ?? undefined,
       role,
       password: hashedPassword,
-      isActive: true,
+      isActive: role !== "VENUE_MANAGER",
       emailVerified: role === "ORGANIZER" || role === "VENUE_MANAGER",
+      ...(role === "VENUE_MANAGER" ? { isVerified: false } : {}),
     },
   });
   return { user, created: true };

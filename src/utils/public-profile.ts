@@ -21,7 +21,15 @@ export function publicPublishedEventWhere(): Prisma.EventWhereInput {
     status: "PUBLISHED",
     isPublic: true,
     organizer: activePublicProfileUserWhere(),
-    OR: [{ venueId: null }, { venue: activePublicProfileUserWhere() }],
+    OR: [
+      { venueId: null },
+      {
+        venue: {
+          ...activePublicProfileUserWhere(),
+          isVerified: true,
+        },
+      },
+    ],
   };
 }
 
@@ -54,6 +62,7 @@ export function isEventPubliclyVisible(event: {
   if (event.venueId) {
     const v = event.venue;
     if (!v || !v.isActive || v.profileVisibility === "private") return false;
+    if ("isVerified" in v && v.isVerified === false) return false;
   }
   return true;
 }

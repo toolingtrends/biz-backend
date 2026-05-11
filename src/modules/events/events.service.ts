@@ -752,6 +752,7 @@ export async function searchEntities(query: string, limit = 5) {
       where: {
         role: "VENUE_MANAGER",
         venueName: { contains: trimmed, mode: "insensitive" },
+        isVerified: true,
         ...activePublicProfileUserWhere(),
       },
       select: {
