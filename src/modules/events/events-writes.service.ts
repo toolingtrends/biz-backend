@@ -290,7 +290,7 @@ export async function findOrCreateUser(userData: {
       password: hashedPassword,
       isActive: true,
       emailVerified: role === "ORGANIZER" || role === "VENUE_MANAGER",
-      ...(role === "VENUE_MANAGER" ? { isVerified: false } : {}),
+      ...(role === "VENUE_MANAGER" || role === "ORGANIZER" ? { isVerified: false } : {}),
     },
   });
   return { user, created: true };

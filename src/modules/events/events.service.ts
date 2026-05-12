@@ -357,6 +357,7 @@ export async function getEventByIdentifier(id: string, viewerUserId?: string | n
         totalReviews: true,
         createdAt: true,
         isActive: true,
+        isVerified: true,
         profileVisibility: true,
       },
     },

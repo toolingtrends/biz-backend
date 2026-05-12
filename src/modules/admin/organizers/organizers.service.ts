@@ -111,6 +111,7 @@ export async function getOrganizerById(id: string) {
       phone: true,
       company: true,
       isActive: true,
+      isVerified: true,
       createdAt: true,
       updatedAt: true,
       totalEvents: true,
@@ -153,6 +154,7 @@ export async function createOrganizer(body: Record<string, unknown>) {
       businessAddress: body.businessAddress != null ? String(body.businessAddress) : null,
       taxId: body.taxId != null ? String(body.taxId) : null,
       isActive: body.isActive !== false,
+      isVerified: body.isVerified === true,
     },
   });
   return getOrganizerById(user.id);

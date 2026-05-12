@@ -20,7 +20,10 @@ export function publicPublishedEventWhere(): Prisma.EventWhereInput {
   return {
     status: "PUBLISHED",
     isPublic: true,
-    organizer: activePublicProfileUserWhere(),
+    organizer: {
+      ...activePublicProfileUserWhere(),
+      isVerified: true,
+    },
     OR: [
       { venueId: null },
       {
@@ -55,11 +58,12 @@ export function canBypassEventPrivacy(
 export function isEventPubliclyVisible(event: {
   organizerId: string;
   venueId: string | null;
-  organizer: { isActive?: boolean; profileVisibility?: string } | null;
-  venue: { isActive?: boolean; profileVisibility?: string } | null;
+  organizer: { isActive?: boolean; profileVisibility?: string; isVerified?: boolean } | null;
+  venue: { isActive?: boolean; profileVisibility?: string; isVerified?: boolean } | null;
 }): boolean {
   const o = event.organizer;
   if (!o || !o.isActive || o.profileVisibility === "private") return false;
+  if (o.isVerified === false) return false;
   if (event.venueId) {
     const v = event.venue;
     if (!v || v.profileVisibility === "private") return false;

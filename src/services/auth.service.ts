@@ -22,6 +22,9 @@ export interface AuthResult {
   tokens: AuthTokens;
 }
 
+/** Thrown when an organizer has not been approved by admin yet (no JWT). */
+export const ORGANIZER_PENDING_APPROVAL = "ORGANIZER_PENDING_APPROVAL";
+
 function mapUserRoleToAuthRole(role: string | null | undefined): AuthRole {
   const r = (role || "").toUpperCase();
   switch (r) {
@@ -119,6 +122,10 @@ export class AuthService {
       return null;
     }
 
+    if (user.role === "ORGANIZER" && !user.isVerified) {
+      throw new Error(ORGANIZER_PENDING_APPROVAL);
+    }
+
     // Venue managers may be delisted from /venues (isVerified=false) but must still be able to sign in.
     if (!user.isActive && user.role !== "VENUE_MANAGER") {
       return null;
@@ -190,7 +197,7 @@ export class AuthService {
           password: hashedPassword,
           avatar: input.image || undefined,
           role: roleForCreate,
-          ...(roleForCreate === "VENUE_MANAGER"
+          ...(roleForCreate === "VENUE_MANAGER" || roleForCreate === "ORGANIZER"
             ? { isVerified: false, isActive: true }
             : { isVerified: true, isActive: true }),
           emailVerified: true,
@@ -212,6 +219,10 @@ export class AuthService {
         throw new Error("User not found after OAuth sync");
       }
       user = refreshed;
+    }
+
+    if (user.role === "ORGANIZER" && !user.isVerified) {
+      throw new Error(ORGANIZER_PENDING_APPROVAL);
     }
 
     if (!user.isActive && user.role !== "VENUE_MANAGER") {
@@ -296,6 +307,9 @@ export class AuthService {
     const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
     if (!user) {
       throw new Error("User not found");
+    }
+    if (user.role === "ORGANIZER" && !user.isVerified) {
+      throw new Error(ORGANIZER_PENDING_APPROVAL);
     }
     if (!user.isActive && user.role !== "VENUE_MANAGER") {
       throw new Error("Account is deactivated");

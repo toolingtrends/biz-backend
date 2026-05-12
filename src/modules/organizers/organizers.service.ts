@@ -15,7 +15,7 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
   const requireProfileImage = options?.requireProfileImage ?? false;
 
   const organizers = await prisma.user.findMany({
-    where: { role: "ORGANIZER", ...activePublicProfileUserWhere() },
+    where: { role: "ORGANIZER", ...activePublicProfileUserWhere(), isVerified: true },
     select: {
       id: true,
       firstName: true,
@@ -146,7 +146,7 @@ async function resolveOrganizerId(identifier: string): Promise<string | null> {
   const targetSlug = String(identifier || "").trim().toLowerCase();
   if (!targetSlug) return null;
   const organizers = await prisma.user.findMany({
-    where: { role: "ORGANIZER", isActive: true },
+    where: { role: "ORGANIZER", isActive: true, isVerified: true },
     select: { id: true, firstName: true, lastName: true, organizationName: true, company: true },
   });
   const withSlug = organizers.map((u) => ({
@@ -212,6 +212,7 @@ export async function getOrganizerById(identifier: string, viewerUserId?: string
       totalRevenue: true,
       createdAt: true,
       isActive: true,
+      isVerified: true,
       profileVisibility: true,
       _count: {
         select: {
@@ -226,6 +227,10 @@ export async function getOrganizerById(identifier: string, viewerUserId?: string
   });
 
   if (!organizer) {
+    return null;
+  }
+
+  if (!organizer.isVerified) {
     return null;
   }
 
