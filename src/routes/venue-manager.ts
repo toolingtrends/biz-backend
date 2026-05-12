@@ -2,6 +2,7 @@ import { Router } from "express";
 import prisma from "../config/prisma";
 import { normalizeVenueTimezoneInput } from "../utils/iana-timezones";
 import { optionalUser } from "../middleware/auth.middleware";
+import { isUuidParam, slugifyVenueSegment } from "../utils/venue-slug";
 
 const router = Router();
 
@@ -59,7 +60,7 @@ async function syncLocationMasterFromVenue(input: { country?: string; state?: st
   }
 }
 
-// GET /api/venue-manager/:id – venue manager profile + basic stats
+// GET /api/venue-manager/:id – venue manager profile + basic stats (id = UUID or slug from venue name)
 router.get("/venue-manager/:id", optionalUser, async (req, res) => {
   try {
     const { id } = req.params;
@@ -69,9 +70,33 @@ router.get("/venue-manager/:id", optionalUser, async (req, res) => {
         .json({ success: false, error: "Invalid venue manager ID" });
     }
 
-    const venueManager = await prisma.user.findUnique({
-      where: { id },
-    });
+    // `id` must be a real UUID for Prisma `findUnique({ where: { id } })`; slug segments would throw.
+    let venueManager = isUuidParam(id)
+      ? await prisma.user.findUnique({
+          where: { id },
+        })
+      : null;
+
+    if (!venueManager && !isUuidParam(id)) {
+      const slug = decodeURIComponent(id).trim().toLowerCase();
+      const managers = await prisma.user.findMany({
+        where: {
+          role: "VENUE_MANAGER",
+          venueName: { not: null },
+        },
+        select: { id: true, venueName: true },
+      });
+      const match = managers.find(
+        (u) =>
+          slugifyVenueSegment(u.venueName || "").length > 0 &&
+          slugifyVenueSegment(u.venueName || "") === slug,
+      );
+      if (match) {
+        venueManager = await prisma.user.findUnique({
+          where: { id: match.id },
+        });
+      }
+    }
 
     if (!venueManager) {
       return res.status(404).json({
