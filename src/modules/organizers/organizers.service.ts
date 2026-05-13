@@ -30,6 +30,9 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
       company: true,
       description: true,
       headquarters: true,
+      organizerCountry: true,
+      organizerState: true,
+      organizerCity: true,
       totalReviews: true,
       averageRating: true,
       founded: true,
@@ -87,6 +90,11 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
     const foundedYear = organizer.founded ? parseInt(organizer.founded) : new Date().getFullYear();
     const yearsOfExperience = Number.isNaN(foundedYear) ? 0 : new Date().getFullYear() - foundedYear;
 
+    const structuredLocation = [organizer.organizerCity, organizer.organizerState, organizer.organizerCountry]
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+      .join(", ");
+
     const displayName = getDisplayName({
       role: "ORGANIZER",
       firstName: organizer.firstName,
@@ -113,10 +121,11 @@ export async function listOrganizers(options?: { requireProfileImage?: boolean }
         : organizer.avatar || "/city/c4.jpg",
       avgRating: organizer.averageRating || 0,
       totalReviews: organizer.totalReviews || 0,
-      headquarters: organizer.headquarters || organizer.location || "Not specified",
+      headquarters:
+        structuredLocation || organizer.headquarters || organizer.location || "Not specified",
       reviewCount: organizer.totalReviews || 0,
       location: organizer.location || "Not specified",
-      country: "India",
+      country: organizer.organizerCountry?.trim() || "India",
       category: organizer.specialties?.[0] || "General Events",
       eventsOrganized: organizer.organizedEvents.length,
       yearsOfExperience,
@@ -207,6 +216,9 @@ export async function getOrganizerById(identifier: string, viewerUserId?: string
       organizationName: true,
       description: true,
       headquarters: true,
+      organizerCountry: true,
+      organizerState: true,
+      organizerCity: true,
       founded: true,
       teamSize: true,
       specialties: true,
@@ -330,6 +342,9 @@ export async function getOrganizerById(identifier: string, viewerUserId?: string
     totalRevenue: attendeeStats._sum.totalAmount || 0,
     founded: organizer.founded || "2020",
     teamSize: organizer.teamSize || "1-10",
+    organizerCountry: organizer.organizerCountry?.trim() ?? "",
+    organizerState: organizer.organizerState?.trim() ?? "",
+    organizerCity: organizer.organizerCity?.trim() ?? "",
     headquarters: organizer.headquarters || organizer.location || "Not specified",
     specialties: organizer.specialties || ["Event Management"],
     achievements: organizer.achievements || [],
@@ -397,6 +412,44 @@ export async function updateOrganizerProfile(
 
   if (body.location !== undefined) {
     data.location = body.location != null ? String(body.location) : null;
+  }
+
+  const trimOrNull = (v: unknown) => {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    const s = String(v).trim();
+    return s.length ? s : null;
+  };
+
+  if (body.organizerCountry !== undefined) {
+    data.organizerCountry = trimOrNull(body.organizerCountry);
+  }
+  if (body.organizerState !== undefined) {
+    data.organizerState = trimOrNull(body.organizerState);
+  }
+  if (body.organizerCity !== undefined) {
+    data.organizerCity = trimOrNull(body.organizerCity);
+  }
+
+  if (
+    body.organizerCountry !== undefined ||
+    body.organizerState !== undefined ||
+    body.organizerCity !== undefined
+  ) {
+    const nextCountry =
+      body.organizerCountry !== undefined
+        ? trimOrNull(body.organizerCountry)
+        : (existing.organizerCountry ?? null);
+    const nextState =
+      body.organizerState !== undefined ? trimOrNull(body.organizerState) : (existing.organizerState ?? null);
+    const nextCity =
+      body.organizerCity !== undefined ? trimOrNull(body.organizerCity) : (existing.organizerCity ?? null);
+    const parts = [nextCity, nextState, nextCountry].filter((x): x is string => Boolean(x));
+    if (parts.length) {
+      data.location = parts.join(", ");
+    } else {
+      data.location = null;
+    }
   }
 
   if (body.founded !== undefined) {

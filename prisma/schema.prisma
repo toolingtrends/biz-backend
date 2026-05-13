@@ -307,6 +307,10 @@ model User {
   organizationName String?
   description      String?
   headquarters     String?
+  /// Organizer profile: cascaded location (same semantics as venue country/state/city names).
+  organizerCountry String?
+  organizerState   String?
+  organizerCity    String?
   founded          String?
   teamSize         String?
   specialties      String[] @default([])
