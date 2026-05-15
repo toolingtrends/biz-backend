@@ -31,6 +31,11 @@ export function isUuidSegment(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value ?? "").trim());
 }
 
+/** Prisma Mongo `@db.ObjectId` — 24 hex chars (not the same as hyphenated UUID). */
+export function isMongoObjectId(value: string): boolean {
+  return /^[a-f\d]{24}$/i.test(String(value ?? "").trim());
+}
+
 /**
  * True if a URL segment (e.g. `maxx`) should resolve to this profile's canonical slug
  * (e.g. `maxx-trade-fairs`). Supports exact match, `maxx-*` prefix, and first hyphen segment.
@@ -47,6 +52,36 @@ export function publicSlugRequestMatches(canonicalSlug: string, requestedRaw: st
   return first === req;
 }
 
+/** All URL segments that may identify an exhibitor (org, company, name variants, display name). */
+export function getExhibitorSlugCandidates(user: ProfileLike): string[] {
+  const fullName = `${String(user.firstName ?? "").trim()} ${String(user.lastName ?? "").trim()}`.trim();
+  const display = getDisplayName({
+    role: "EXHIBITOR",
+    firstName: user.firstName,
+    lastName: user.lastName,
+    organizationName: user.organizationName,
+    company: user.company,
+  });
+  const parts = [
+    user.organizationName,
+    user.company,
+    fullName,
+    user.firstName,
+    user.lastName,
+    display,
+  ];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const p of parts) {
+    const s = slugifyProfileValue(p);
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      out.push(s);
+    }
+  }
+  return out;
+}
+
 export function getPublicProfileSlug(user: ProfileLike, preferredRole?: ProfileRole): string {
   const role = (preferredRole ?? String(user.role ?? "").toUpperCase()) as ProfileRole;
   const fullName = `${String(user.firstName ?? "").trim()} ${String(user.lastName ?? "").trim()}`.trim();
@@ -61,14 +96,8 @@ export function getPublicProfileSlug(user: ProfileLike, preferredRole?: ProfileR
   }
 
   if (role === "EXHIBITOR") {
-    const fullName = `${String(user.firstName ?? "").trim()} ${String(user.lastName ?? "").trim()}`.trim();
-    return (
-      slugifyProfileValue(user.organizationName) ||
-      slugifyProfileValue(user.company) ||
-      slugifyProfileValue(fullName) ||
-      slugifyProfileValue(user.firstName) ||
-      "exhibitor"
-    );
+    const candidates = getExhibitorSlugCandidates(user);
+    return candidates[0] ?? "exhibitor";
   }
 
   if (role === "SPEAKER" || role === "ATTENDEE" || role === "USER") {
